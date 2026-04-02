@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from app.agents.agent5_scoring_ranking import (
+from app.agents.agent5 import (
     compute_composite_score,
     evaluate_behavioral_transcript,
     recompute_rankings,
@@ -42,8 +42,8 @@ def test_recompute_rankings(monkeypatch):
     def fake_update_candidate(job_id, candidate_id, data):
         updated[candidate_id] = data
 
-    monkeypatch.setattr("app.agents.agent5_scoring_ranking.get_candidates", fake_get_candidates)
-    monkeypatch.setattr("app.agents.agent5_scoring_ranking.update_candidate", fake_update_candidate)
+    monkeypatch.setattr("app.agents.agent5.get_candidates", fake_get_candidates)
+    monkeypatch.setattr("app.agents.agent5.update_candidate", fake_update_candidate)
 
     asyncio.run(recompute_rankings("job123"))
 
@@ -62,8 +62,8 @@ def test_calculate_source_scores(monkeypatch):
     def fake_update_candidate(job_id, candidate_id, data):
         updated[candidate_id] = data
 
-    monkeypatch.setattr("app.agents.agent5_scoring_ranking.get_candidates", fake_get_candidates)
-    monkeypatch.setattr("app.agents.agent5_scoring_ranking.update_candidate", fake_update_candidate)
+    monkeypatch.setattr("app.agents.agent5.get_candidates", fake_get_candidates)
+    monkeypatch.setattr("app.agents.agent5.update_candidate", fake_update_candidate)
 
     compute_source_scores("job123")
 
@@ -94,8 +94,8 @@ def test_run_scoring_engine(monkeypatch):
     def fake_update_candidate(job_id, candidate_id, data):
         updated_candidates.setdefault(candidate_id, {}).update(data)
 
-    monkeypatch.setattr("app.agents.agent5_scoring_ranking.get_candidates", fake_get_candidates)
-    monkeypatch.setattr("app.agents.agent5_scoring_ranking.update_candidate", fake_update_candidate)
+    monkeypatch.setattr("app.agents.agent5.get_candidates", fake_get_candidates)
+    monkeypatch.setattr("app.agents.agent5.update_candidate", fake_update_candidate)
 
     state = {
         "job_id": "job123",

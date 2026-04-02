@@ -5,7 +5,7 @@ import asyncio
 
 import pytest
 
-from app.agents.agent4_market_analyst import run_market_analyst
+from app.agents.agent4 import run_market_analyst
 
 
 class DummyJobStore:
@@ -31,8 +31,8 @@ class DummyJobStore:
 def test_run_market_analyst(monkeypatch):
     store = DummyJobStore()
 
-    monkeypatch.setattr("app.agents.agent4_market_analyst.get_job", store.get_job)
-    monkeypatch.setattr("app.agents.agent4_market_analyst.update_job", store.update_job)
+    monkeypatch.setattr("app.agents.agent4.get_job", store.get_job)
+    monkeypatch.setattr("app.agents.agent4.update_job", store.update_job)
 
     state = {
         "job_id": "job123",
@@ -53,7 +53,7 @@ def test_run_market_analyst(monkeypatch):
 
 
 def test_check_budget_warning():
-    from app.agents.agent4_market_analyst import check_budget_warning
+    from app.agents.agent4 import check_budget_warning
 
     assert check_budget_warning(100000, 120000) is True
     assert check_budget_warning(130000, 120000) is False
