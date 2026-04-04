@@ -106,6 +106,12 @@ def get_candidates(job_id: str) -> list[dict]:
     return [d.to_dict() for d in docs]
 
 
+def get_candidate(job_id: str, candidate_id: str) -> dict | None:
+    db = get_db()
+    doc = db.collection("jobs").document(job_id).collection("candidates").document(candidate_id).get()
+    return doc.to_dict() if doc.exists else None
+
+
 def update_candidate(job_id: str, candidate_id: str, data: dict) -> None:
     db = get_db()
     db.collection("jobs").document(job_id).collection("candidates").document(
