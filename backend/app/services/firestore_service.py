@@ -15,13 +15,15 @@ def _get_app() -> firebase_admin.App:
     if firebase_admin._apps:
         return firebase_admin.get_app()
 
-    cred = credentials.Certificate({
-        "type": "service_account",
-        "project_id": os.environ["FIREBASE_PROJECT_ID"],
-        "private_key": os.environ["FIREBASE_PRIVATE_KEY"].replace("\\n", "\n"),
-        "client_email": os.environ["FIREBASE_CLIENT_EMAIL"],
-        "token_uri": "https://oauth2.googleapis.com/token",
-    })
+    cred = credentials.Certificate(
+        {
+            "type": "service_account",
+            "project_id": os.environ["FIREBASE_PROJECT_ID"],
+            "private_key": os.environ["FIREBASE_PRIVATE_KEY"].replace("\\n", "\n"),
+            "client_email": os.environ["FIREBASE_CLIENT_EMAIL"],
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+    )
     return firebase_admin.initialize_app(cred)
 
 
@@ -29,8 +31,6 @@ def get_db() -> firestore.Client:
     _get_app()
     return firestore.client()
 
-
-# ── Jobs ─────────────────────────────────────────────────────────────────────
 
 def get_job(job_id: str) -> dict | None:
     db = get_db()
@@ -40,19 +40,17 @@ def get_job(job_id: str) -> dict | None:
 
 def update_job(job_id: str, data: dict) -> None:
     db = get_db()
-    db.collection("jobs").document(job_id).set({
-        **data,
-        "updated_at": datetime.now(timezone.utc),
-    }, merge=True)
+    db.collection("jobs").document(job_id).set(
+        {
+            **data,
+            "updated_at": datetime.now(timezone.utc),
+        },
+        merge=True,
+    )
 
-
-# ── Candidates ───────────────────────────────────────────────────────────────
 
 def persist_candidates(job_id: str, candidates: list[CandidateProfile]) -> list[str]:
-    """
-    Write each CandidateProfile into jobs/{job_id}/candidates.
-    Returns list of created candidate_ids.
-    """
+    """Write each CandidateProfile into jobs/{job_id}/candidates."""
     db = get_db()
     col = db.collection("jobs").document(job_id).collection("candidates")
     ids: list[str] = []
@@ -71,19 +69,32 @@ def persist_candidates(job_id: str, candidates: list[CandidateProfile]) -> list[
             "location": candidate.location or "",
             "pipeline_stage": "SOURCED",
             "source_score": 0.0,
+            "source_signals": {},
             "github_signals": {
                 "languages": candidate.languages,
                 "top_repos": candidate.top_repos,
                 "commit_frequency": "",
                 "profile_summary": candidate.bio or "",
+                "followers": candidate.followers,
             },
             "source": candidate.source,
             "shortlisted": False,
             "behavioral_complete": False,
+            "behavioral_score": 0.0,
+            "oa_score": 0.0,
+            "oa_passed": False,
+            "experience_passed": None,
+            "location_passed": None,
+            "salary_within_budget": None,
             "oa_submitted_at": None,
             "composite_score": None,
             "rank": None,
             "interview_status": "PENDING",
+            "interview_rounds": {},
+            "current_round": 0,
+            "total_rounds": 0,
+            "overall_interview_result": "PENDING",
+            "overall_feedback": None,
             "created_at": now,
             "updated_at": now,
         }
@@ -103,17 +114,79 @@ def get_candidates(job_id: str) -> list[dict]:
         .order_by("rank")
         .stream()
     )
-    return [d.to_dict() for d in docs]
+    return [doc.to_dict() for doc in docs]
 
 
 def get_candidate(job_id: str, candidate_id: str) -> dict | None:
     db = get_db()
-    doc = db.collection("jobs").document(job_id).collection("candidates").document(candidate_id).get()
+    doc = (
+        db.collection("jobs")
+        .document(job_id)
+        .collection("candidates")
+        .document(candidate_id)
+        .get()
+    )
     return doc.to_dict() if doc.exists else None
 
 
 def update_candidate(job_id: str, candidate_id: str, data: dict) -> None:
     db = get_db()
-    db.collection("jobs").document(job_id).collection("candidates").document(
-        candidate_id
-    ).update({**data, "updated_at": datetime.now(timezone.utc)})
+    (
+        db.collection("jobs")
+        .document(job_id)
+        .collection("candidates")
+        .document(candidate_id)
+        .update({**data, "updated_at": datetime.now(timezone.utc)})
+    )
+
+
+def save_interview_round(
+    job_id: str,
+    candidate_id: str,
+    candidate_name: str,
+    round_number: int,
+    result: str,
+    feedback: str,
+    interviewer_name: str | None,
+    total_rounds: int,
+) -> None:
+    """Persist a single interview round under jobs/{job_id}/candidates/{candidate_id}."""
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    candidate_ref = (
+        db.collection("jobs")
+        .document(job_id)
+        .collection("candidates")
+        .document(candidate_id)
+    )
+
+    round_payload = {
+        "candidate_id": candidate_id,
+        "candidate_name": candidate_name,
+        "round_number": round_number,
+        "result": result,
+        "feedback": feedback,
+        "interviewer_name": interviewer_name,
+        "completed_at": now,
+    }
+
+    overall_result = "PENDING"
+    overall_feedback = None
+    if result == "REJECTED":
+        overall_result = "REJECTED"
+        overall_feedback = feedback
+    elif round_number >= total_rounds:
+        overall_result = "SELECTED"
+        overall_feedback = feedback
+
+    payload = {
+        f"interview_rounds.{round_number}": round_payload,
+        "current_round": round_number,
+        "total_rounds": total_rounds,
+        "overall_interview_result": overall_result,
+        "updated_at": now,
+    }
+    if overall_feedback is not None:
+        payload["overall_feedback"] = overall_feedback
+
+    candidate_ref.set(payload, merge=True)

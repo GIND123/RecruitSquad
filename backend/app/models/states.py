@@ -3,16 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TypedDict
 
-from app.models.schemas import (
-    CandidateProfile,
-    OAQuestion,
-    OAResponse,
-    SalaryReport,
-    ScoreBreakdown,
-)
+from app.models.schemas import CandidateProfile, OAQuestion, OAResponse, SalaryReport, ScoreBreakdown
 
-
-# ── Graph 1 State — Sourcing ─────────────────────────────────────────────────
 
 class SourcingState(TypedDict):
     job_id: str
@@ -24,8 +16,6 @@ class SourcingState(TypedDict):
     outreach_sent: bool
     graph1_complete: bool
 
-
-# ── Graph 2 State — Screening ────────────────────────────────────────────────
 
 class ScreeningState(TypedDict):
     job_id: str
@@ -45,8 +35,6 @@ class ScreeningState(TypedDict):
     graph2_complete: bool
 
 
-# ── Graph 3 State — Coordination ─────────────────────────────────────────────
-
 class InterviewSlot(TypedDict):
     candidate_id: str
     slot: datetime
@@ -54,11 +42,36 @@ class InterviewSlot(TypedDict):
     calendly_event_id: str
 
 
-class CoordinationState(TypedDict):
+class CoordinationStateBase(TypedDict):
     job_id: str
     shortlisted_candidates: list[str]
     confirmed_slots: list[InterviewSlot]
-    salary_report: SalaryReport
+    salary_report: SalaryReport | None
     confirmations_sent: bool
     report_sent_to_manager: bool
     graph3_complete: bool
+
+
+class CoordinationState(CoordinationStateBase, total=False):
+    candidate_id: str
+    email_to_manager: dict
+    email_to_candidate: dict | None
+
+
+class InterviewRoundStateBase(TypedDict):
+    job_id: str
+    candidate_id: str
+    round_number: int
+    round_result: str
+    round_feedback: str
+    total_rounds: int
+    next_action: str
+    salary_report: SalaryReport | None
+    email_to_candidate: dict | None
+    email_to_manager: dict | None
+
+
+class InterviewRoundState(InterviewRoundStateBase, total=False):
+    interviewer_name: str | None
+    confirmations_sent: bool
+    report_sent_to_manager: bool
