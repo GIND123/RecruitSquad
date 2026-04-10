@@ -7,6 +7,7 @@ import { Profile } from './pages/Profile';
 import { Login } from './pages/Login';
 import { ManagerDashboard } from './pages/ManagerDashboard';
 import { CreateJob } from './pages/CreateJob';
+import { JobAdvertisements } from './pages/JobAdvertisements';
 import { Layout } from './components/Layout';
 
 export const router = createBrowserRouter([
@@ -18,6 +19,7 @@ export const router = createBrowserRouter([
       { path: 'jobs', element: <Jobs /> },
       { path: 'jobs/:id', element: <JobDetails /> },
       { path: 'jobs/:id/apply', element: <Apply /> },
+      { path: 'job-advertisements', element: <JobAdvertisements /> },
       { path: 'profile', element: <Profile /> },
       { path: 'login', element: <Login /> },
       { path: 'manager', element: <ManagerDashboard /> },

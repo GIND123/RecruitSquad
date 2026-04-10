@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { Search, SlidersHorizontal, MapPin, X } from "lucide-react";
-import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
-import { JobCard, type Job } from "./components/JobCard";
-import { JobDetail } from "./components/JobDetail";
-import { JobFilters } from "./components/JobFilters";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { JobCard, type Job } from "../components/JobCard";
+import { JobDetail } from "../components/JobDetail";
+import { JobFilters } from "../components/JobFilters";
 
-// Mock job data
 const mockJobs: Job[] = [
   {
     id: "1",
@@ -121,7 +120,7 @@ const mockJobs: Job[] = [
   },
 ];
 
-function App() {
+export function JobAdvertisements() {
   const [selectedJob, setSelectedJob] = useState<Job>(mockJobs[0]);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -139,7 +138,7 @@ function App() {
               </div>
               <h1 className="font-semibold hidden sm:block">LinkedIn Jobs</h1>
             </div>
-            
+
             <div className="flex-1 flex gap-2">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -151,7 +150,7 @@ function App() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              
+
               <div className="relative flex-1 max-w-xs hidden md:block">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
@@ -182,7 +181,7 @@ function App() {
               <span className="sm:hidden">Filters</span>
             </Button>
           </div>
-          
+
           <p className="text-sm text-gray-600">
             <span className="hidden sm:inline">Showing </span>
             {mockJobs.length} jobs
@@ -247,5 +246,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
