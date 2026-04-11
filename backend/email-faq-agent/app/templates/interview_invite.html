@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+  .container { max-width: 600px; margin: 40px auto; background: #fff; padding: 32px; border-radius: 8px; }
+  h1 { color: #2d3748; }
+  p { color: #4a5568; line-height: 1.6; }
+  .interviewer-block { margin: 20px 0; padding: 16px; background: #f7fafc; border-left: 4px solid #4299e1; border-radius: 4px; }
+  .interviewer-name { font-weight: bold; color: #2d3748; margin-bottom: 6px; }
+  .book-btn { display: inline-block; margin-top: 8px; padding: 10px 20px; background: #4299e1; color: #fff; text-decoration: none; border-radius: 5px; font-size: 14px; }
+  .custom-msg { background: #fffbeb; border: 1px solid #f6e05e; border-radius: 4px; padding: 12px 16px; margin: 20px 0; color: #744210; }
+  .footer { margin-top: 32px; font-size: 12px; color: #a0aec0; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Interview Invitation, {{ candidate_name }}!</h1>
+    <p>
+      We are pleased to invite you for an interview. Please use the link(s) below
+      to select a time that works best for you.
+    </p>
+
+    {% if custom_message %}
+    <div class="custom-msg">{{ custom_message }}</div>
+    {% endif %}
+
+    <p><strong>Please choose a convenient time slot by clicking the relevant link:</strong></p>
+
+    {% for interviewer in interviewers %}
+    <div class="interviewer-block">
+      <div class="interviewer-name">{{ interviewer.name }}</div>
+      <a class="book-btn" href="{{ interviewer.calendly_link }}">Book a slot with {{ interviewer.name }}</a>
+    </div>
+    {% endfor %}
+
+    <p>
+      Once you book a slot, you will receive a calendar invitation with all meeting details.
+      If you have any questions, please reply to this email.
+    </p>
+
+    <div class="footer">
+      This invitation was sent on behalf of the hiring team.
+    </div>
+  </div>
+</body>
+</html>

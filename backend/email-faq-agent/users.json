@@ -1,0 +1,39 @@
+{
+  "users": [
+    {
+      "id": "u001",
+      "name": "Rupali Patel",
+      "email": "abc@gmail.com",
+      "role": "admin",
+      "calendly_link": "https://calendly.com/abc/30min"
+    },
+    {
+      "id": "u002",
+      "name": "Adwaith Santosh",
+      "email": "abc@umd.edu",
+      "role": "user",
+      "calendly_link": "https://calendly.com/xyz/30min"
+    },
+    {
+      "id": "u003",
+      "name": "Bala M",
+      "email": "balaabc@umd.edu",
+      "role": "user",
+      "calendly_link": "https://calendly.com/carol-williams/30min"
+    },
+    {
+      "id": "u004",
+      "name": "David Lee",
+      "email": "david@example.com",
+      "role": "moderator",
+      "calendly_link": "https://calendly.com/david-lee/60min"
+    },
+    {
+      "id": "u005",
+      "name": "Eve Martinez",
+      "email": "eve@example.com",
+      "role": "user",
+      "calendly_link": "https://calendly.com/eve-martinez/30min"
+    }
+  ]
+}
