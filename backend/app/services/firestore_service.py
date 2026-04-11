@@ -149,10 +149,24 @@ def save_interview_round(
     feedback: str,
     interviewer_name: str | None,
     total_rounds: int,
+    completed_at: datetime | None = None,
+    interviewer_id: str | None = None,
 ) -> None:
-    """Persist a single interview round under jobs/{job_id}/candidates/{candidate_id}."""
+    """
+    Persist a single interview round under jobs/{job_id}/candidates/{candidate_id}.
+
+    Uses update() — NOT set(merge=True) — so dot-notation field paths
+    (e.g. 'interview_rounds.1') are correctly stored as nested map entries
+    rather than top-level keys with a literal dot in the name.
+
+    Parameters
+    ----------
+    completed_at : optional timestamp from the interviewer's form submission.
+                   Defaults to utcnow() when not provided.
+    interviewer_id : optional portal user ID of the interviewer.
+    """
     db = get_db()
-    now = datetime.now(timezone.utc)
+    now = completed_at or datetime.now(timezone.utc)
     candidate_ref = (
         db.collection("jobs")
         .document(job_id)
@@ -167,6 +181,7 @@ def save_interview_round(
         "result": result,
         "feedback": feedback,
         "interviewer_name": interviewer_name,
+        "interviewer_id": interviewer_id,
         "completed_at": now,
     }
 
@@ -179,14 +194,15 @@ def save_interview_round(
         overall_result = "SELECTED"
         overall_feedback = feedback
 
+    # update() correctly interprets 'interview_rounds.N' as a nested path.
     payload = {
         f"interview_rounds.{round_number}": round_payload,
         "current_round": round_number,
         "total_rounds": total_rounds,
         "overall_interview_result": overall_result,
-        "updated_at": now,
+        "updated_at": datetime.now(timezone.utc),
     }
     if overall_feedback is not None:
         payload["overall_feedback"] = overall_feedback
 
-    candidate_ref.set(payload, merge=True)
+    candidate_ref.update(payload)

@@ -491,15 +491,29 @@ def run_scoring_ranking(state: dict[str, Any]) -> dict[str, Any]:
     return {**state, "shortlisted_candidates": shortlisted_ids}
 
 
-def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundState:
-    job_id = state["job_id"]
-    candidate_id = state["candidate_id"]
-    round_number = state["round_number"]
-    round_result = state["round_result"]
+async def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundState:
+    """
+    Process a single interview round submitted from the interviewer portal.
+
+    Portal drill-down:  Job ID → Candidate → form(result, feedback, completed_at)
+
+    round_number  is auto-derived from candidate.current_round + 1 so the
+                  caller never needs to track it manually.
+    total_rounds  is resolved in priority order:
+                  state['total_rounds'] → candidate.total_rounds → job.total_interview_rounds → 3
+
+    Multiple candidates' rounds can be processed concurrently — each
+    candidate owns its own Firestore document so there is no shared state.
+    """
+    job_id         = state["job_id"]
+    candidate_id   = state["candidate_id"]
+    round_result   = state["round_result"]
     round_feedback = state["round_feedback"]
     interviewer_name = state.get("interviewer_name")
-    total_rounds = state["total_rounds"]
+    interviewer_id   = state.get("interviewer_id")
+    completed_at     = state.get("completed_at")   # from interviewer form; None → now()
 
+    # ── Read candidate from Firestore ────────────────────────────────────────
     candidate = get_candidate(job_id, candidate_id)
     if not candidate:
         return {
@@ -510,8 +524,25 @@ def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundStat
             "salary_report": None,
         }
 
-    candidate_name = candidate.get("name", "Candidate")
+    candidate_name  = candidate.get("name", "Candidate")
     candidate_email = candidate.get("email", "")
+
+    # ── Auto-derive round_number ─────────────────────────────────────────────
+    # Interviewer portal never sends round_number; we compute it from the
+    # candidate's persisted current_round so parallel calls stay consistent.
+    current_round = int(candidate.get("current_round") or 0)
+    round_number  = int(state.get("round_number") or (current_round + 1))
+
+    # ── Auto-derive total_rounds ─────────────────────────────────────────────
+    total_rounds = int(state.get("total_rounds") or candidate.get("total_rounds") or 0)
+    if not total_rounds:
+        job = get_job(job_id) or {}
+        total_rounds = int(job.get("total_interview_rounds") or 3)
+
+    logger.info(
+        "[A5] interview round: job=%s cid=%s round=%d/%d result=%s interviewer=%s",
+        job_id, candidate_id, round_number, total_rounds, round_result, interviewer_name,
+    )
 
     save_interview_round(
         job_id=job_id,
@@ -522,31 +553,33 @@ def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundStat
         feedback=round_feedback,
         interviewer_name=interviewer_name,
         total_rounds=total_rounds,
+        completed_at=completed_at,
+        interviewer_id=interviewer_id,
     )
 
-    is_rejected = round_result == "REJECTED"
+    is_rejected   = round_result == "REJECTED"
     is_last_round = round_number >= total_rounds
     if is_rejected:
         next_action = "REJECTED"
-        new_stage = "REJECTED"
+        new_stage   = "REJECTED"
     elif is_last_round:
         next_action = "MARKET_ANALYSIS"
-        new_stage = "INTERVIEW_DONE"
+        new_stage   = "INTERVIEW_DONE"
     else:
         next_action = "SCHEDULE_NEXT_ROUND"
-        new_stage = "INTERVIEW_SCHEDULED"
+        new_stage   = "INTERVIEW_SCHEDULED"
 
     update_candidate(job_id, candidate_id, {"pipeline_stage": new_stage})
 
-    job = get_job(job_id) or {}
+    job       = get_job(job_id) or {}
     job_title = job.get("title", "the role")
 
     email_to_candidate: dict[str, Any] | None = None
-    email_to_manager: dict[str, Any] | None = None
+    email_to_manager:   dict[str, Any] | None = None
 
     if next_action == "REJECTED":
         email_to_candidate = {
-            "to": candidate_email,
+            "to":      candidate_email,
             "subject": f"Update on your application for {job_title}",
             "body": (
                 f"Dear {candidate_name},\n\n"
@@ -572,7 +605,7 @@ def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundStat
     elif next_action == "SCHEDULE_NEXT_ROUND":
         next_round = round_number + 1
         email_to_candidate = {
-            "to": candidate_email,
+            "to":      candidate_email,
             "subject": f"Congratulations! You passed Round {round_number} - {job_title}",
             "body": (
                 f"Dear {candidate_name},\n\n"
@@ -582,27 +615,33 @@ def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundStat
                 f"Please confirm your availability.\n\n"
                 f"Best regards,\nThe Hiring Team"
             ),
-            "type": "ROUND_SELECTED_CANDIDATE",
+            "type":       "ROUND_SELECTED_CANDIDATE",
             "next_round": next_round,
         }
         email_to_manager = {
-            "subject": f"[RecruitSquad] {candidate_name} passed Round {round_number} - Schedule Round {next_round}",
+            "subject": (
+                f"[RecruitSquad] {candidate_name} passed Round {round_number} "
+                f"- Schedule Round {next_round}"
+            ),
             "body": (
-                f"Candidate {candidate_name} (ID: {candidate_id}) passed interview round {round_number} "
-                f"for {job_title}.\n\n"
+                f"Candidate {candidate_name} (ID: {candidate_id}) passed interview round "
+                f"{round_number} for {job_title}.\n\n"
                 f"Interviewer feedback:\n{round_feedback}\n\n"
                 f"Interviewer: {interviewer_name or 'Not specified'}\n\n"
-                f"Next step: interview round {next_round} should be scheduled."
+                f"Next step: schedule interview round {next_round}."
             ),
-            "type": "ROUND_SELECTED_MANAGER",
+            "type":       "ROUND_SELECTED_MANAGER",
             "next_round": next_round,
         }
-    else:
+    else:  # MARKET_ANALYSIS
         email_to_manager = {
-            "subject": f"[RecruitSquad] {candidate_name} completed all {total_rounds} rounds - {job_title}",
+            "subject": (
+                f"[RecruitSquad] {candidate_name} completed all {total_rounds} "
+                f"rounds - {job_title}"
+            ),
             "body": (
-                f"Candidate {candidate_name} (ID: {candidate_id}) has successfully completed all "
-                f"{total_rounds} interview rounds for {job_title}.\n\n"
+                f"Candidate {candidate_name} (ID: {candidate_id}) has successfully "
+                f"completed all {total_rounds} interview rounds for {job_title}.\n\n"
                 f"Final round feedback:\n{round_feedback}\n\n"
                 f"Interviewer: {interviewer_name or 'Not specified'}\n\n"
                 f"Market salary analysis is being generated and will follow shortly."
@@ -612,8 +651,10 @@ def update_interview_scorecard(state: InterviewRoundState) -> InterviewRoundStat
 
     return {
         **state,
-        "next_action": next_action,
+        "round_number":       round_number,
+        "total_rounds":       total_rounds,
+        "next_action":        next_action,
         "email_to_candidate": email_to_candidate,
-        "email_to_manager": email_to_manager,
-        "salary_report": None,
+        "email_to_manager":   email_to_manager,
+        "salary_report":      None,
     }

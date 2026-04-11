@@ -59,12 +59,19 @@ class CoordinationState(CoordinationStateBase, total=False):
 
 
 class InterviewRoundStateBase(TypedDict):
+    """
+    Minimum fields an interviewer portal submits per round.
+
+    The portal drill-down provides job_id + candidate_id.
+    The interviewer fills in round_result, round_feedback, and optionally
+    completed_at.  round_number and total_rounds are auto-derived by
+    update_interview_scorecard from the candidate's current Firestore state
+    so the caller never has to track them manually.
+    """
     job_id: str
     candidate_id: str
-    round_number: int
-    round_result: str
-    round_feedback: str
-    total_rounds: int
+    round_result: str       # "SELECTED" | "REJECTED"
+    round_feedback: str     # free-text interviewer notes
     next_action: str
     salary_report: SalaryReport | None
     email_to_candidate: dict | None
@@ -72,6 +79,12 @@ class InterviewRoundStateBase(TypedDict):
 
 
 class InterviewRoundState(InterviewRoundStateBase, total=False):
+    # Auto-derived if omitted — caller does not need to set these
+    round_number: int           # derived: candidate.current_round + 1
+    total_rounds: int           # derived: candidate.total_rounds → job.total_interview_rounds → 3
+    # Interviewer portal optional fields
+    completed_at: datetime      # when the interview was completed; defaults to now()
     interviewer_name: str | None
+    interviewer_id: str | None  # optional portal user ID
     confirmations_sent: bool
     report_sent_to_manager: bool

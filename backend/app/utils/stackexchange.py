@@ -9,14 +9,17 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-STACKEXCHANGE_API_KEY = os.environ.get("STACKEXCHANGE_API_KEY", "")
+# NOTE: read at call time (not module load time) so .env loaded in notebooks
+# is always picked up regardless of import order.
 STACKEXCHANGE_URL = "https://api.stackexchange.com/2.3"
 
 
 def _default_params() -> dict[str, Any]:
-    params = {"site": "stackoverflow", "pagesize": 20}
-    if STACKEXCHANGE_API_KEY:
-        params["key"] = STACKEXCHANGE_API_KEY
+    # Re-read from env each call — safe even if .env was loaded after import
+    api_key = os.environ.get("STACKEXCHANGE_API_KEY", "")
+    params: dict[str, Any] = {"site": "stackoverflow", "pagesize": 20}
+    if api_key:
+        params["key"] = api_key
     return params
 
 
