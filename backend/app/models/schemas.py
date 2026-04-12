@@ -6,8 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr
 
 
-# ── Job Schemas ──────────────────────────────────────────────────────────────
-
 class JobCreateRequest(BaseModel):
     title: str
     role_description: str
@@ -28,8 +26,6 @@ class JobResponse(BaseModel):
     candidate_count: int
     created_at: datetime
 
-
-# ── Candidate Schemas ────────────────────────────────────────────────────────
 
 class ScoreBreakdown(BaseModel):
     source_fit: float
@@ -54,20 +50,25 @@ class CandidateResponse(BaseModel):
 
 class StageUpdateRequest(BaseModel):
     stage: Literal[
-        "SOURCED", "OA_SENT", "BEHAVIORAL_COMPLETE",
-        "SCORED", "SHORTLISTED", "INTERVIEW_SCHEDULED",
-        "INTERVIEW_DONE", "OFFERED", "HIRED", "REJECTED"
+        "SOURCED",
+        "OA_SENT",
+        "BEHAVIORAL_COMPLETE",
+        "SCORED",
+        "SHORTLISTED",
+        "INTERVIEW_SCHEDULED",
+        "INTERVIEW_DONE",
+        "OFFERED",
+        "HIRED",
+        "REJECTED",
     ]
     reason: str | None = None
 
-
-# ── OA / Chat Schemas ────────────────────────────────────────────────────────
 
 class OAQuestion(BaseModel):
     question_id: str
     question_text: str
     type: Literal["MCQ", "CODING", "TEXT"]
-    options: list[str] | None = None  # only for MCQ
+    options: list[str] | None = None
     time_limit_minutes: int | None = None
 
 
@@ -91,8 +92,6 @@ class ChatReply(BaseModel):
     timestamp: datetime
 
 
-# ── Referral Schema ──────────────────────────────────────────────────────────
-
 class ReferralRequest(BaseModel):
     job_id: str
     referrer_name: str
@@ -101,8 +100,6 @@ class ReferralRequest(BaseModel):
     candidate_email: EmailStr
     note: str | None = None
 
-
-# ── GitHub / LinkedIn Profile (internal) ────────────────────────────────────
 
 class GithubProfile(BaseModel):
     login: str
@@ -123,11 +120,12 @@ class LinkedInProfile(BaseModel):
     linkedin_url: str
     headline: str | None = None
     location: str | None = None
-    snippet: str | None = None  # Google snippet from SERP result
+    snippet: str | None = None
 
 
 class CandidateProfile(BaseModel):
-    """Unified candidate profile combining GitHub + LinkedIn signals."""
+    """Unified candidate profile combining GitHub and LinkedIn signals."""
+
     name: str
     email: str | None = None
     github_url: str | None = None
@@ -142,8 +140,6 @@ class CandidateProfile(BaseModel):
     source: Literal["github", "linkedin", "both"] = "github"
 
 
-# ── Salary Report ────────────────────────────────────────────────────────────
-
 class SalaryReport(BaseModel):
     job_id: str
     location: str
@@ -156,4 +152,34 @@ class SalaryReport(BaseModel):
     budget_max: float
     budget_warning: bool
     data_sources: list[str]
+    analysis_summary: str | None = None
     generated_at: datetime
+
+
+class InterviewRound(BaseModel):
+    round_number: int
+    result: Literal["SELECTED", "REJECTED", "PENDING"]
+    feedback: str
+    interviewer_name: str | None = None
+    scheduled_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class InterviewFeedbackRequest(BaseModel):
+    round_number: int
+    result: Literal["SELECTED", "REJECTED"]
+    feedback: str
+    interviewer_name: str | None = None
+    total_rounds: int = 1
+
+
+class InterviewFeedbackResponse(BaseModel):
+    candidate_id: str
+    round_number: int
+    result: str
+    next_action: Literal[
+        "SCHEDULE_NEXT_ROUND",
+        "MARKET_ANALYSIS",
+        "REJECTED",
+    ]
+    message: str
