@@ -8,11 +8,11 @@ Sends emails via one of two paths (checked in order):
   2. EMAIL AGENT  — falls back to the email-faq-agent microservice at
                     EMAIL_AGENT_URL when SMTP credentials are absent.
 
-Configuration (env vars with baked-in defaults):
+Configuration (env vars):
     SMTP_HOST       smtp.gmail.com
     SMTP_PORT       465
     SMTP_USER       alice.ai.hr.agent@gmail.com
-    SMTP_PASS       clmosdmoqwmnejzf          (Gmail app password, no spaces)
+    SMTP_PASS       (Gmail app password — set via Secret Manager / .env, no default)
     FROM_EMAIL      same as SMTP_USER
     EMAIL_AGENT_URL http://localhost:8001     (fallback microservice)
 
@@ -43,7 +43,7 @@ _TIMEOUT = 10.0   # seconds
 _SMTP_HOST  = os.environ.get("SMTP_HOST")  or "smtp.gmail.com"
 _SMTP_PORT  = int(os.environ.get("SMTP_PORT") or "465")
 _SMTP_USER  = os.environ.get("SMTP_USER")  or "alice.ai.hr.agent@gmail.com"
-_SMTP_PASS  = os.environ.get("SMTP_PASS")  or "clmosdmoqwmnejzf"   # app password, no spaces
+_SMTP_PASS  = os.environ.get("SMTP_PASS", "")
 _FROM_EMAIL = os.environ.get("FROM_EMAIL") or _SMTP_USER
 
 # True when both SMTP creds are present — enables direct-send path
