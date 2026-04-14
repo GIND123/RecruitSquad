@@ -1,3 +1,5 @@
+import { auth } from './firebase';
+
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -10,6 +12,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(err.detail ?? 'Request failed');
   }
   return res.json();
+}
+
+/** Like request() but attaches the Firebase ID token — use for manager endpoints. */
+async function authRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Not authenticated. Please sign in.');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+  return request<T>(path, { ...options, headers });
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -128,13 +142,20 @@ export interface InterviewFeedbackPayload {
 
 // ── API calls ─────────────────────────────────────────────────────────────────
 
+export interface MyApplication {
+  candidate: Candidate;
+  job: JobSummary;
+}
+
 export const api = {
   jobs: {
     list: () => request<JobSummary[]>('/api/jobs'),
+    myApplications: () =>
+      authRequest<{ applications: MyApplication[] }>('/api/jobs/my-applications'),
     get: (jobId: string) => request<JobDetail>(`/api/jobs/${jobId}`),
     create: (payload: CreateJobPayload) =>
-      request<JobSummary>('/api/jobs', { method: 'POST', body: JSON.stringify(payload) }),
-    report: (jobId: string) => request<JobReport>(`/api/jobs/${jobId}/report`),
+      authRequest<JobSummary>('/api/jobs', { method: 'POST', body: JSON.stringify(payload) }),
+    report: (jobId: string) => authRequest<JobReport>(`/api/jobs/${jobId}/report`),
     apply: async (
       jobId: string,
       name: string,
@@ -163,17 +184,17 @@ export const api = {
   },
   candidates: {
     list: (jobId: string) =>
-      request<{ job_id: string; candidates: Candidate[] }>(`/api/jobs/${jobId}/candidates`),
+      authRequest<{ job_id: string; candidates: Candidate[] }>(`/api/jobs/${jobId}/candidates`),
     submitInterviewFeedback: (
       jobId: string,
       candidateId: string,
       payload: InterviewFeedbackPayload
     ) =>
-      request(`/api/jobs/${jobId}/candidates/${candidateId}/interview-feedback`, {
+      authRequest(`/api/jobs/${jobId}/candidates/${candidateId}/interview-feedback`, {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
     startScreening: (jobId: string, candidateId: string) =>
-      request(`/api/jobs/${jobId}/candidates/${candidateId}/start-screening`, { method: 'POST' }),
+      authRequest(`/api/jobs/${jobId}/candidates/${candidateId}/start-screening`, { method: 'POST' }),
   },
 };

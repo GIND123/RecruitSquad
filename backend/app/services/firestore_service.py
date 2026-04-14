@@ -286,6 +286,40 @@ def find_candidate_by_oa_token(oa_token: str) -> dict | None:
     return None
 
 
+def find_candidates_by_email(email: str) -> list[dict]:
+    """
+    Return all candidate docs (across all jobs) that match the given email.
+    Each returned dict includes a 'job_id' field.
+    Uses a collection-group query; falls back to sequential scan on index error.
+    """
+    db = get_db()
+    results: list[dict] = []
+    try:
+        docs = (
+            db.collection_group("candidates")
+            .where("email", "==", email)
+            .stream()
+        )
+        for doc in docs:
+            data = doc.to_dict() or {}
+            if "job_id" not in data:
+                # Derive job_id from the document path: jobs/{job_id}/candidates/{cid}
+                parts = doc.reference.path.split("/")
+                data["job_id"] = parts[1] if len(parts) >= 2 else ""
+            results.append(data)
+    except Exception:
+        for job_doc in db.collection("jobs").stream():
+            job_id = job_doc.id
+            for c in (
+                db.collection("jobs").document(job_id)
+                .collection("candidates").where("email", "==", email).stream()
+            ):
+                data = c.to_dict() or {}
+                data.setdefault("job_id", job_id)
+                results.append(data)
+    return results
+
+
 def get_all_jobs() -> list[dict]:
     """Return all job documents (used by audit and reporting endpoints)."""
     db = get_db()

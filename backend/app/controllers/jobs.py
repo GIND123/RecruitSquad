@@ -4,7 +4,8 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
+from app.dependencies.auth import get_current_user, require_manager
 
 from app.agents.agent2 import run_behavioral_oa
 from app.agents.agent7 import run_audit
@@ -36,7 +37,8 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
 @router.post("", response_model=JobResponse, status_code=201)
-async def create_job(payload: JobCreateRequest, background_tasks: BackgroundTasks):
+async def create_job(payload: JobCreateRequest, background_tasks: BackgroundTasks,
+                     _=Depends(require_manager)):
     """Create a job and trigger Agent 1 sourcing in the background."""
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -120,6 +122,39 @@ async def list_jobs():
         )
         for j in jobs
     ]
+
+
+@router.get("/my-applications", status_code=200)
+async def my_applications(current_user: dict = Depends(get_current_user)):
+    """
+    Candidate endpoint — returns all applications for the authenticated user.
+    Looks up by the email in their Firebase ID token.
+    """
+    from app.services.firestore_service import find_candidates_by_email
+
+    email = current_user.get("email", "")
+    if not email:
+        raise HTTPException(status_code=400, detail="No email in token")
+
+    candidates = find_candidates_by_email(email)
+    # Attach job summary to each result
+    enriched = []
+    for c in candidates:
+        job_id = c.get("job_id", "")
+        job = get_job(job_id) or {}
+        enriched.append({
+            "candidate": c,
+            "job": {
+                "job_id":    job_id,
+                "title":     job.get("title", ""),
+                "status":    job.get("status", ""),
+                "headcount": job.get("headcount", 1),
+                "candidate_count": job.get("candidate_count", 0),
+                "created_at": str(job.get("created_at", "")),
+            },
+        })
+    enriched.sort(key=lambda r: r["candidate"].get("created_at", ""), reverse=True)
+    return {"applications": enriched}
 
 
 @router.get("/{job_id}")
@@ -214,7 +249,7 @@ async def apply_to_job(
 
 
 @router.get("/{job_id}/candidates")
-async def list_candidates(job_id: str):
+async def list_candidates(job_id: str, _=Depends(require_manager)):
     """Return all sourced candidates for a job."""
     job = get_job(job_id)
     if not job:
@@ -314,6 +349,7 @@ async def start_screening(
     job_id: str,
     candidate_id: str,
     background_tasks: BackgroundTasks,
+    _=Depends(require_manager),
 ):
     """
     Trigger A2 for a single candidate — generates OA + behavioral questions
@@ -446,7 +482,7 @@ async def confirm_schedule(candidate_id: str, payload: dict, background_tasks: B
 
 
 @router.get("/{job_id}/report")
-async def get_job_report(job_id: str):
+async def get_job_report(job_id: str, _=Depends(require_manager)):
     """
     Run A7 audit and return salary report + top candidates + audit summary.
     Results are also persisted to Firestore under jobs/{job_id}.audit.
@@ -484,6 +520,7 @@ async def submit_interview_feedback(
     candidate_id: str,
     payload: InterviewFeedbackRequest,
     background_tasks: BackgroundTasks,
+    _=Depends(require_manager),
 ):
     if not get_job(job_id):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")

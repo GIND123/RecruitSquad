@@ -1,17 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
-import { api, Candidate, JobSummary } from '../services/apiService';
+import { api, MyApplication } from '../services/apiService';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { User, Mail, Briefcase, Calendar, FileText, ArrowRight, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface ApplicationRow {
-  candidate: Candidate;
-  job: JobSummary;
-}
 
 const STAGE_COLOR: Record<string, string> = {
   APPLIED: 'bg-yellow-100 text-yellow-800',
@@ -27,34 +22,14 @@ const STAGE_COLOR: Record<string, string> = {
 export const Profile = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [rows, setRows] = useState<ApplicationRow[]>([]);
+  const [rows, setRows] = useState<MyApplication[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!user) { setIsLoading(false); return; }
 
-    api.jobs.list()
-      .then(async (jobs) => {
-        const results: ApplicationRow[] = [];
-        await Promise.all(
-          jobs.map(async (job) => {
-            try {
-              const { candidates } = await api.candidates.list(job.job_id);
-              for (const c of candidates) {
-                if (c.email.toLowerCase() === user.email.toLowerCase()) {
-                  results.push({ candidate: c, job });
-                }
-              }
-            } catch {
-              // skip jobs we can't read
-            }
-          })
-        );
-        results.sort(
-          (a, b) => new Date(b.candidate.created_at).getTime() - new Date(a.candidate.created_at).getTime()
-        );
-        setRows(results);
-      })
+    api.jobs.myApplications()
+      .then(({ applications }) => setRows(applications))
       .catch(() => toast.error('Failed to load your applications.'))
       .finally(() => setIsLoading(false));
   }, [user]);
