@@ -7,8 +7,13 @@ import { Profile } from './pages/Profile';
 import { Login } from './pages/Login';
 import { ManagerDashboard } from './pages/ManagerDashboard';
 import { CreateJob } from './pages/CreateJob';
+import { JobCandidates } from './pages/JobCandidates';
+import { BehavioralChat } from './pages/BehavioralChat';
+import { OnlineAssessment } from './pages/OnlineAssessment';
+import { InterviewSchedule } from './pages/InterviewSchedule';
 import { JobAdvertisements } from './pages/JobAdvertisements';
 import { Layout } from './components/Layout';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 export const router = createBrowserRouter([
   {
@@ -19,12 +24,44 @@ export const router = createBrowserRouter([
       { path: 'jobs', element: <Jobs /> },
       { path: 'jobs/:id', element: <JobDetails /> },
       { path: 'jobs/:id/apply', element: <Apply /> },
+      { path: 'oa/:token', element: <OnlineAssessment /> },
+      { path: 'schedule/:candidateId', element: <InterviewSchedule /> },
+      { path: 'oa/:token/chat', element: <BehavioralChat /> },
       { path: 'job-advertisements', element: <JobAdvertisements /> },
-      { path: 'profile', element: <Profile /> },
       { path: 'login', element: <Login /> },
-      { path: 'manager', element: <ManagerDashboard /> },
-      { path: 'manager/create-job', element: <CreateJob /> },
-      { path: '*', element: <Navigate to="/" replace /> }
-    ]
-  }
+      {
+        path: 'profile',
+        element: (
+          <ProtectedRoute>
+            <Profile />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'manager',
+        element: (
+          <ProtectedRoute requireManager>
+            <ManagerDashboard />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'manager/create-job',
+        element: (
+          <ProtectedRoute requireManager>
+            <CreateJob />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'manager/jobs/:jobId',
+        element: (
+          <ProtectedRoute requireManager>
+            <JobCandidates />
+          </ProtectedRoute>
+        ),
+      },
+      { path: '*', element: <Navigate to="/" replace /> },
+    ],
+  },
 ]);

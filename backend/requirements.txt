@@ -1,14 +1,14 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic[email]==2.9.2
+eval-type-backport==0.2.0
 python-dotenv==1.0.1
 httpx==0.27.2
 
 # LangGraph / LangChain
-langgraph>=0.2.35
-langchain-openai>=0.2.3
-langchain-core>=0.3.15
-openai>=1.52.0
+# langchain-core and langchain-openai are transitive deps — let pip resolve them
+langgraph==0.2.35
+openai>=1.52.0,<2.0.0
 
 # Firebase / Firestore
 firebase-admin==6.5.0
@@ -19,8 +19,8 @@ PyGithub==2.4.0
 # Serper API (LinkedIn search via Google)
 # No extra package needed — uses httpx which is already listed above
 
-# Numerics
-numpy==2.1.2
+# Numerics  (last wheel for Python 3.9)
+numpy==1.26.4
 
 # Jinja2 for email templates
 jinja2==3.1.4
@@ -28,6 +28,18 @@ jinja2==3.1.4
 # Async support
 aiohttp==3.10.9
 
-# MCP server
-mcp>=1.0.0
+# Multipart form / file upload support for FastAPI
+python-multipart==0.0.9
+
+# Resume text extraction (PDF and DOCX parsing for CMS scoring)
+pypdf>=4.0.0
+python-docx>=1.1.0
+
+# Google Calendar API (interview scheduling + Meet link generation)
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+
+# MCP server — requires Python >=3.10, not needed for the FastAPI server.
+# Only used by the standalone gpt_agent.py CLI. Install separately if needed:
+#   pip install "mcp>=1.0.0"
 pytest==8.4.2

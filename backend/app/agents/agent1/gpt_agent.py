@@ -27,8 +27,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+try:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+except ImportError:
+    raise SystemExit(
+        "mcp is not installed. It requires Python >=3.10.\n"
+        "Install it with: pip install 'mcp>=1.0.0'"
+    )
 from openai import AsyncOpenAI
 
 _MCP_SERVER = Path(__file__).parent / "mcp_server.py"

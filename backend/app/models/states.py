@@ -32,6 +32,7 @@ class ScreeningState(TypedDict):
     zoom_url: str
     invite_sent: bool
     invite_status: str
+    reschedule_count: int
     graph2_complete: bool
 
 

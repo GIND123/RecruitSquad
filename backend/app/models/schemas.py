@@ -16,6 +16,8 @@ class JobCreateRequest(BaseModel):
     experience_min: int
     experience_max: int
     team: str
+    total_interview_rounds: int = 3     # feature: configurable rounds per posting
+    referrals_enabled: bool = False     # feature: referral priority for sourced candidates
 
 
 class JobResponse(BaseModel):
@@ -171,6 +173,14 @@ class InterviewFeedbackRequest(BaseModel):
     feedback: str
     interviewer_name: str | None = None
     total_rounds: int = 1
+    # Structured scoring fields (all optional — legacy callers still work)
+    technical_score: int | None = None          # 1–10
+    communication_score: int | None = None      # 1–10
+    problem_solving_score: int | None = None    # 1–10
+    cultural_fit_score: int | None = None       # 1–10
+    recommendation: Literal[
+        "strong_yes", "yes", "neutral", "no", "strong_no"
+    ] | None = None
 
 
 class InterviewFeedbackResponse(BaseModel):

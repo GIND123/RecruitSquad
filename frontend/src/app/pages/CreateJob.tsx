@@ -1,256 +1,252 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useJobs } from '../contexts/JobContext';
-import { useAuth } from '../contexts/AuthContext';
+import { api } from '../services/apiService';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X, Users, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const CreateJob = () => {
-  const { addJob } = useJobs();
-  const { isManager } = useAuth();
   const navigate = useNavigate();
-  
-  const [formData, setFormData] = useState({
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [form, setForm] = useState({
     title: '',
-    department: '',
-    location: '',
-    type: 'Full-time' as 'Full-time' | 'Part-time' | 'Contract' | 'Internship',
-    description: '',
-    salary: '',
-    requirements: [''],
-    responsibilities: ['']
+    team: '',
+    role_description: '',
+    headcount: 1,
+    budget_min: 0,
+    budget_max: 0,
+    experience_min: 0,
+    experience_max: 0,
+    locations: [''],
+    total_interview_rounds: 3,
+    referrals_enabled: false,
   });
 
-  if (!isManager) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="max-w-md w-full mx-4 p-8 text-center">
-          <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-          <p className="text-gray-600 mb-6">
-            This page is only accessible to managers.
-          </p>
-          <Button onClick={() => navigate('/')}>
-            Go to Home
-          </Button>
-        </Card>
-      </div>
-    );
-  }
+  const set = (field: string, value: any) => setForm((p) => ({ ...p, [field]: value }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Locations list helpers
+  const addLocation = () => set('locations', [...form.locations, '']);
+  const removeLocation = (i: number) =>
+    set('locations', form.locations.filter((_, idx) => idx !== i));
+  const updateLocation = (i: number, v: string) => {
+    const updated = [...form.locations];
+    updated[i] = v;
+    set('locations', updated);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate
-    if (!formData.title || !formData.department || !formData.location || !formData.description) {
-      toast.error('Please fill in all required fields');
+
+    const validLocations = form.locations.map((l) => l.trim()).filter(Boolean);
+    if (validLocations.length === 0) {
+      toast.error('Add at least one location.');
+      return;
+    }
+    if (form.budget_min >= form.budget_max) {
+      toast.error('Budget max must be greater than budget min.');
+      return;
+    }
+    if (form.experience_min > form.experience_max) {
+      toast.error('Experience max must be ≥ experience min.');
       return;
     }
 
-    const validRequirements = formData.requirements.filter(r => r.trim() !== '');
-    const validResponsibilities = formData.responsibilities.filter(r => r.trim() !== '');
-
-    if (validRequirements.length === 0 || validResponsibilities.length === 0) {
-      toast.error('Please add at least one requirement and responsibility');
-      return;
+    setIsLoading(true);
+    try {
+      await api.jobs.create({
+        title: form.title,
+        team: form.team,
+        role_description: form.role_description,
+        headcount: form.headcount,
+        budget_min: form.budget_min,
+        budget_max: form.budget_max,
+        experience_min: form.experience_min,
+        experience_max: form.experience_max,
+        locations: validLocations,
+        total_interview_rounds: form.total_interview_rounds,
+        referrals_enabled: form.referrals_enabled,
+      });
+      toast.success('Job posted! Agent 1 is now sourcing candidates.');
+      navigate('/manager');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to post job.');
+    } finally {
+      setIsLoading(false);
     }
-
-    addJob({
-      title: formData.title,
-      department: formData.department,
-      location: formData.location,
-      type: formData.type,
-      description: formData.description,
-      salary: formData.salary || undefined,
-      requirements: validRequirements,
-      responsibilities: validResponsibilities
-    });
-
-    toast.success('Job posted successfully!');
-    navigate('/manager');
-  };
-
-  const addRequirement = () => {
-    setFormData({
-      ...formData,
-      requirements: [...formData.requirements, '']
-    });
-  };
-
-  const removeRequirement = (index: number) => {
-    setFormData({
-      ...formData,
-      requirements: formData.requirements.filter((_, i) => i !== index)
-    });
-  };
-
-  const updateRequirement = (index: number, value: string) => {
-    const newRequirements = [...formData.requirements];
-    newRequirements[index] = value;
-    setFormData({ ...formData, requirements: newRequirements });
-  };
-
-  const addResponsibility = () => {
-    setFormData({
-      ...formData,
-      responsibilities: [...formData.responsibilities, '']
-    });
-  };
-
-  const removeResponsibility = (index: number) => {
-    setFormData({
-      ...formData,
-      responsibilities: formData.responsibilities.filter((_, i) => i !== index)
-    });
-  };
-
-  const updateResponsibility = (index: number, value: string) => {
-    const newResponsibilities = [...formData.responsibilities];
-    newResponsibilities[index] = value;
-    setFormData({ ...formData, responsibilities: newResponsibilities });
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white py-8">
         <div className="container mx-auto px-4">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             className="text-white hover:bg-white/20 mb-4"
             onClick={() => navigate('/manager')}
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
-          
           <h1 className="text-3xl md:text-4xl font-bold">Post a New Job</h1>
+          <p className="opacity-80 mt-1">
+            Submitting will automatically trigger Agent 1 to source candidates.
+          </p>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-3xl mx-auto">
           <Card className="p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Basic Information */}
-              <div>
-                <h2 className="text-xl font-semibold mb-4">Basic Information</h2>
+            <form onSubmit={handleSubmit} className="space-y-8">
+
+              {/* ── Basic Info ── */}
+              <section>
+                <h2 className="text-lg font-semibold mb-4 pb-2 border-b">Basic Information</h2>
                 <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="title">Job Title *</Label>
+                      <Input
+                        id="title"
+                        placeholder="e.g. Senior Software Engineer"
+                        value={form.title}
+                        onChange={(e) => set('title', e.target.value)}
+                        className="mt-1.5"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="team">Team / Department *</Label>
+                      <Input
+                        id="team"
+                        placeholder="e.g. Platform Engineering"
+                        value={form.team}
+                        onChange={(e) => set('team', e.target.value)}
+                        className="mt-1.5"
+                        required
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <Label htmlFor="title">Job Title *</Label>
+                    <Label htmlFor="headcount">Headcount *</Label>
                     <Input
-                      id="title"
-                      type="text"
-                      placeholder="e.g., Senior Software Engineer"
-                      value={formData.title}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      id="headcount"
+                      type="number"
+                      min={1}
+                      value={form.headcount}
+                      onChange={(e) => set('headcount', parseInt(e.target.value) || 1)}
+                      className="mt-1.5 w-32"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="desc">Role Description *</Label>
+                    <Textarea
+                      id="desc"
+                      placeholder="Describe the role, responsibilities, and what you're looking for..."
+                      value={form.role_description}
+                      onChange={(e) => set('role_description', e.target.value)}
+                      className="mt-1.5 min-h-36"
+                      required
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* ── Budget ── */}
+              <section>
+                <h2 className="text-lg font-semibold mb-4 pb-2 border-b">Budget (Annual USD)</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="bmin">Budget Min *</Label>
+                    <Input
+                      id="bmin"
+                      type="number"
+                      min={0}
+                      placeholder="80000"
+                      value={form.budget_min || ''}
+                      onChange={(e) => set('budget_min', parseFloat(e.target.value) || 0)}
                       className="mt-1.5"
                       required
                     />
                   </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="department">Department *</Label>
-                      <Input
-                        id="department"
-                        type="text"
-                        placeholder="e.g., Engineering"
-                        value={formData.department}
-                        onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                        className="mt-1.5"
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="location">Location *</Label>
-                      <Input
-                        id="location"
-                        type="text"
-                        placeholder="e.g., Mountain View, CA"
-                        value={formData.location}
-                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        className="mt-1.5"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="type">Employment Type *</Label>
-                      <Select 
-                        value={formData.type} 
-                        onValueChange={(value: any) => setFormData({ ...formData, type: value })}
-                      >
-                        <SelectTrigger className="mt-1.5">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Full-time">Full-time</SelectItem>
-                          <SelectItem value="Part-time">Part-time</SelectItem>
-                          <SelectItem value="Contract">Contract</SelectItem>
-                          <SelectItem value="Internship">Internship</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="salary">Salary Range (Optional)</Label>
-                      <Input
-                        id="salary"
-                        type="text"
-                        placeholder="e.g., $120,000 - $160,000"
-                        value={formData.salary}
-                        onChange={(e) => setFormData({ ...formData, salary: e.target.value })}
-                        className="mt-1.5"
-                      />
-                    </div>
-                  </div>
-
                   <div>
-                    <Label htmlFor="description">Job Description *</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="Describe the role and what makes it exciting..."
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="mt-1.5 min-h-32"
+                    <Label htmlFor="bmax">Budget Max *</Label>
+                    <Input
+                      id="bmax"
+                      type="number"
+                      min={0}
+                      placeholder="150000"
+                      value={form.budget_max || ''}
+                      onChange={(e) => set('budget_max', parseFloat(e.target.value) || 0)}
+                      className="mt-1.5"
                       required
                     />
                   </div>
                 </div>
-              </div>
+              </section>
 
-              {/* Requirements */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">Requirements *</h2>
-                  <Button type="button" variant="outline" size="sm" onClick={addRequirement}>
-                    <Plus className="w-4 h-4 mr-2" />
+              {/* ── Experience ── */}
+              <section>
+                <h2 className="text-lg font-semibold mb-4 pb-2 border-b">Experience (Years)</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="emin">Minimum *</Label>
+                    <Input
+                      id="emin"
+                      type="number"
+                      min={0}
+                      value={form.experience_min}
+                      onChange={(e) => set('experience_min', parseInt(e.target.value) || 0)}
+                      className="mt-1.5"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="emax">Maximum *</Label>
+                    <Input
+                      id="emax"
+                      type="number"
+                      min={0}
+                      value={form.experience_max}
+                      onChange={(e) => set('experience_max', parseInt(e.target.value) || 0)}
+                      className="mt-1.5"
+                      required
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* ── Locations ── */}
+              <section>
+                <div className="flex items-center justify-between mb-4 pb-2 border-b">
+                  <h2 className="text-lg font-semibold">Locations *</h2>
+                  <Button type="button" variant="outline" size="sm" onClick={addLocation}>
+                    <Plus className="w-4 h-4 mr-1" />
                     Add
                   </Button>
                 </div>
                 <div className="space-y-3">
-                  {formData.requirements.map((req, index) => (
-                    <div key={index} className="flex gap-2">
+                  {form.locations.map((loc, i) => (
+                    <div key={i} className="flex gap-2">
                       <Input
-                        type="text"
-                        placeholder={`Requirement ${index + 1}`}
-                        value={req}
-                        onChange={(e) => updateRequirement(index, e.target.value)}
+                        placeholder={`e.g. San Francisco, CA`}
+                        value={loc}
+                        onChange={(e) => updateLocation(i, e.target.value)}
                       />
-                      {formData.requirements.length > 1 && (
-                        <Button 
-                          type="button" 
-                          variant="outline" 
+                      {form.locations.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
                           size="icon"
-                          onClick={() => removeRequirement(index)}
+                          onClick={() => removeLocation(i)}
                         >
                           <X className="w-4 h-4" />
                         </Button>
@@ -258,51 +254,64 @@ export const CreateJob = () => {
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              {/* Responsibilities */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">Responsibilities *</h2>
-                  <Button type="button" variant="outline" size="sm" onClick={addResponsibility}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add
-                  </Button>
-                </div>
-                <div className="space-y-3">
-                  {formData.responsibilities.map((resp, index) => (
-                    <div key={index} className="flex gap-2">
+              {/* ── Interview Configuration ── */}
+              <section>
+                <h2 className="text-lg font-semibold mb-4 pb-2 border-b flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 text-blue-600" />
+                  Interview Configuration
+                </h2>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="rounds">Number of Interview Rounds</Label>
+                    <div className="flex items-center gap-3 mt-1.5">
                       <Input
-                        type="text"
-                        placeholder={`Responsibility ${index + 1}`}
-                        value={resp}
-                        onChange={(e) => updateResponsibility(index, e.target.value)}
+                        id="rounds"
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={form.total_interview_rounds}
+                        onChange={(e) => set('total_interview_rounds', Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                        className="w-24"
                       />
-                      {formData.responsibilities.length > 1 && (
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          size="icon"
-                          onClick={() => removeResponsibility(index)}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <span className="text-sm text-gray-500">rounds (1–10)</span>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              {/* Actions */}
-              <div className="flex gap-3 pt-4">
-                <Button type="submit" className="flex-1" size="lg">
-                  Post Job
+                  <div className="flex items-start gap-3">
+                    <input
+                      id="referrals"
+                      type="checkbox"
+                      checked={form.referrals_enabled}
+                      onChange={(e) => set('referrals_enabled', e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <Label htmlFor="referrals" className="cursor-pointer flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-blue-600" />
+                        Enable Referrals
+                      </Label>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Sourced candidates receive a personal referral link. Portal applicants who
+                        apply through that link get a scoring bonus.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* ── Actions ── */}
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" className="flex-1" size="lg" disabled={isLoading}>
+                  {isLoading ? 'Posting…' : 'Post Job & Start Sourcing'}
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   size="lg"
                   onClick={() => navigate('/manager')}
+                  disabled={isLoading}
                 >
                   Cancel
                 </Button>

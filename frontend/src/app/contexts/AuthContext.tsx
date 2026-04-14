@@ -1,80 +1,122 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'candidate' | 'manager';
-}
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { auth } from '../services/firebase';
+import {
+  getUserProfile,
+  loginWithEmail,
+  signupWithEmail,
+  loginWithGoogle as fbLoginWithGoogle,
+  logoutUser,
+  resetPassword as fbResetPassword,
+  UserProfile,
+} from '../services/authService';
 
 interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string, role: 'candidate' | 'manager') => Promise<boolean>;
-  logout: () => void;
+  user: UserProfile | null;
+  firebaseUser: FirebaseUser | null;
+  loading: boolean;
   isManager: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string, name: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setLoading(true);
+      setFirebaseUser(fbUser);
+      if (fbUser) {
+        try {
+          const profile = await getUserProfile(fbUser.uid);
+          if (profile) {
+            setUser(profile);
+          } else {
+            // Profile doc doesn't exist yet — race condition on fresh signup or
+            // Google sign-in (Firestore write happens after onAuthStateChanged fires).
+            // Use Firebase user as immediate fallback so the header updates at once.
+            setUser({
+              uid: fbUser.uid,
+              email: fbUser.email ?? '',
+              name:
+                fbUser.displayName ??
+                fbUser.email?.split('@')[0] ??
+                'User',
+              role: 'candidate',
+              createdAt: new Date().toISOString(),
+            });
+            // Retry once after 2 s so we pick up the real Firestore doc
+            // (which includes the correct role for manager accounts).
+            setTimeout(async () => {
+              try {
+                const retried = await getUserProfile(fbUser.uid);
+                if (retried) setUser(retried);
+              } catch {
+                /* keep fallback */
+              }
+            }, 2000);
+          }
+        } catch {
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    });
+    return unsubscribe;
   }, []);
 
-  const login = async (email: string, password: string, role: 'candidate' | 'manager'): Promise<boolean> => {
-    // Mock authentication
-    // Manager login: manager@google.com / password
-    // Candidate can use any email
-    
-    if (role === 'manager' && email === 'manager@google.com' && password === 'password') {
-      const newUser: User = {
-        id: 'manager-1',
-        email,
-        name: 'Hiring Manager',
-        role: 'manager'
-      };
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      return true;
-    } else if (role === 'candidate') {
-      const newUser: User = {
-        id: `candidate-${Date.now()}`,
-        email,
-        name: email.split('@')[0],
-        role: 'candidate'
-      };
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      return true;
-    }
-    
-    return false;
+  const login = async (email: string, password: string) => {
+    await loginWithEmail(email, password);
+    // onAuthStateChanged will update user state
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
+  const signup = async (email: string, password: string, name: string) => {
+    await signupWithEmail(email, password, name);
   };
 
-  const isManager = user?.role === 'manager';
+  const loginWithGoogle = async () => {
+    await fbLoginWithGoogle();
+  };
+
+  const logout = async () => {
+    await logoutUser();
+  };
+
+  const resetPassword = async (email: string) => {
+    await fbResetPassword(email);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isManager }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        firebaseUser,
+        loading,
+        isManager: user?.role === 'manager',
+        login,
+        signup,
+        loginWithGoogle,
+        logout,
+        resetPassword,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 };

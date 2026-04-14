@@ -1,15 +1,63 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
-import { useJobs } from '../contexts/JobContext';
+import { api, Candidate, JobSummary } from '../services/apiService';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { User, Mail, Briefcase, Calendar, FileText, ArrowRight } from 'lucide-react';
+import { User, Mail, Briefcase, Calendar, FileText, ArrowRight, ExternalLink } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface ApplicationRow {
+  candidate: Candidate;
+  job: JobSummary;
+}
+
+const STAGE_COLOR: Record<string, string> = {
+  APPLIED: 'bg-yellow-100 text-yellow-800',
+  SOURCED: 'bg-blue-100 text-blue-800',
+  OA_SENT: 'bg-purple-100 text-purple-800',
+  OA_COMPLETED: 'bg-indigo-100 text-indigo-800',
+  SHORTLISTED: 'bg-green-100 text-green-800',
+  INTERVIEW: 'bg-orange-100 text-orange-800',
+  OFFERED: 'bg-teal-100 text-teal-800',
+  REJECTED: 'bg-red-100 text-red-800',
+};
 
 export const Profile = () => {
   const { user } = useAuth();
-  const { getUserApplications } = useJobs();
   const navigate = useNavigate();
+  const [rows, setRows] = useState<ApplicationRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) { setIsLoading(false); return; }
+
+    api.jobs.list()
+      .then(async (jobs) => {
+        const results: ApplicationRow[] = [];
+        await Promise.all(
+          jobs.map(async (job) => {
+            try {
+              const { candidates } = await api.candidates.list(job.job_id);
+              for (const c of candidates) {
+                if (c.email.toLowerCase() === user.email.toLowerCase()) {
+                  results.push({ candidate: c, job });
+                }
+              }
+            } catch {
+              // skip jobs we can't read
+            }
+          })
+        );
+        results.sort(
+          (a, b) => new Date(b.candidate.created_at).getTime() - new Date(a.candidate.created_at).getTime()
+        );
+        setRows(results);
+      })
+      .catch(() => toast.error('Failed to load your applications.'))
+      .finally(() => setIsLoading(false));
+  }, [user]);
 
   if (!user) {
     return (
@@ -19,25 +67,11 @@ export const Profile = () => {
           <p className="text-gray-600 mb-6">
             Please login to view your profile and applications.
           </p>
-          <Button onClick={() => navigate('/login')}>
-            Go to Login
-          </Button>
+          <Button onClick={() => navigate('/login')}>Go to Login</Button>
         </Card>
       </div>
     );
   }
-
-  const applications = getUserApplications(user.email);
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'reviewed': return 'bg-blue-100 text-blue-800';
-      case 'accepted': return 'bg-green-100 text-green-800';
-      case 'rejected': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -68,7 +102,7 @@ export const Profile = () => {
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <Briefcase className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-700">{applications.length} Applications</span>
+                  <span className="text-gray-700">{rows.length} Application{rows.length !== 1 ? 's' : ''}</span>
                 </div>
               </div>
 
@@ -82,61 +116,53 @@ export const Profile = () => {
           {/* Applications */}
           <div className="lg:col-span-2">
             <h2 className="text-2xl font-semibold mb-6">My Applications</h2>
-            
-            {applications.length > 0 ? (
+
+            {isLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : rows.length > 0 ? (
               <div className="space-y-4">
-                {applications.map(app => (
-                  <Card key={app.id} className="p-6 hover:shadow-lg transition-shadow">
+                {rows.map(({ candidate, job }) => (
+                  <Card key={candidate.candidate_id} className="p-6 hover:shadow-lg transition-shadow">
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <h3 className="text-xl font-semibold">{app.jobTitle}</h3>
-                          <Badge className={getStatusColor(app.status)}>
-                            {app.status.charAt(0).toUpperCase() + app.status.slice(1)}
+                          <h3 className="text-xl font-semibold">{job.title}</h3>
+                          <Badge className={STAGE_COLOR[candidate.pipeline_stage] ?? 'bg-gray-100 text-gray-800'}>
+                            {candidate.pipeline_stage.replace(/_/g, ' ')}
                           </Badge>
                         </div>
-                        
+
                         <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-3">
                           <div className="flex items-center gap-1">
                             <Calendar className="w-4 h-4" />
-                            <span>Applied {new Date(app.appliedDate).toLocaleDateString()}</span>
+                            <span>Applied {new Date(candidate.created_at).toLocaleDateString()}</span>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <FileText className="w-4 h-4" />
-                            <span>{app.resumeName}</span>
-                          </div>
+                          {(candidate as any).resume_filename && (
+                            <div className="flex items-center gap-1">
+                              <FileText className="w-4 h-4" />
+                              <span>{(candidate as any).resume_filename}</span>
+                            </div>
+                          )}
                         </div>
 
-                        {app.status === 'pending' && (
-                          <p className="text-sm text-gray-500">
-                            Your application is under review. We'll notify you of any updates.
-                          </p>
-                        )}
-                        {app.status === 'reviewed' && (
-                          <p className="text-sm text-blue-600">
-                            Your application has been reviewed. We'll be in touch soon!
-                          </p>
-                        )}
-                        {app.status === 'accepted' && (
-                          <p className="text-sm text-green-600">
-                            Congratulations! We'd like to move forward with your application.
-                          </p>
-                        )}
-                        {app.status === 'rejected' && (
-                          <p className="text-sm text-gray-500">
-                            Unfortunately, we've decided to move forward with other candidates.
-                          </p>
+                        {(candidate as any).resume_url && (
+                          <a
+                            href={(candidate as any).resume_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            View Resume
+                          </a>
                         )}
                       </div>
 
-                      <div>
-                        <Button 
-                          variant="outline"
-                          onClick={() => navigate(`/jobs/${app.jobId}`)}
-                        >
-                          View Job
-                        </Button>
-                      </div>
+                      <Button variant="outline" onClick={() => navigate(`/jobs/${job.job_id}`)}>
+                        View Job
+                      </Button>
                     </div>
                   </Card>
                 ))}
@@ -148,9 +174,7 @@ export const Profile = () => {
                 <p className="text-gray-600 mb-6">
                   You haven't applied to any jobs yet. Browse our open positions to get started!
                 </p>
-                <Button onClick={() => navigate('/jobs')}>
-                  Explore Jobs
-                </Button>
+                <Button onClick={() => navigate('/jobs')}>Explore Jobs</Button>
               </Card>
             )}
           </div>

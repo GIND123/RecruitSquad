@@ -1,130 +1,54 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, SlidersHorizontal, MapPin, X } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { JobCard, type Job } from "../components/JobCard";
 import { JobDetail } from "../components/JobDetail";
 import { JobFilters } from "../components/JobFilters";
+import { api, JobSummary } from "../services/apiService";
+import { toast } from "sonner";
 
-const mockJobs: Job[] = [
-  {
-    id: "1",
-    title: "Senior Software Engineer",
-    company: "Google",
-    location: "Mountain View, CA",
+const OPEN_STATUSES = new Set(['PENDING', 'SOURCING', 'SOURCED', 'ACTIVE', 'SCHEDULING', 'SCHEDULED']);
+
+function summaryToJob(j: JobSummary): Job {
+  return {
+    id: j.job_id,
+    title: j.title,
+    company: "RecruitSquad",
+    location: "See details",
     type: "Full-time",
     level: "Mid-Senior level",
-    postedDate: "2 days ago",
-    applicants: 127,
-    description: "Join our world-class engineering team to build innovative products that impact billions of users worldwide.",
-    promoted: true,
-  },
-  {
-    id: "2",
-    title: "Product Manager",
-    company: "Microsoft",
-    location: "Redmond, WA",
-    type: "Full-time",
-    level: "Mid-Senior level",
-    postedDate: "5 days ago",
-    applicants: 89,
-    description: "Lead product strategy and execution for cutting-edge cloud solutions.",
-  },
-  {
-    id: "3",
-    title: "UX Designer",
-    company: "Apple",
-    location: "Cupertino, CA",
-    type: "Full-time",
-    level: "Associate",
-    postedDate: "1 week ago",
-    applicants: 203,
-    description: "Create beautiful and intuitive user experiences for millions of Apple users.",
-  },
-  {
-    id: "4",
-    title: "Data Scientist",
-    company: "Amazon",
-    location: "Seattle, WA",
-    type: "Full-time",
-    level: "Mid-Senior level",
-    postedDate: "3 days ago",
-    applicants: 156,
-    description: "Drive data-driven decision making through advanced analytics and machine learning.",
-  },
-  {
-    id: "5",
-    title: "Frontend Developer",
-    company: "Meta",
-    location: "Menlo Park, CA",
-    type: "Full-time",
-    level: "Entry level",
-    postedDate: "4 days ago",
-    applicants: 94,
-    description: "Build the next generation of social experiences with modern web technologies.",
-  },
-  {
-    id: "6",
-    title: "DevOps Engineer",
-    company: "Netflix",
-    location: "Los Gatos, CA",
-    type: "Full-time",
-    level: "Mid-Senior level",
-    postedDate: "1 week ago",
-    applicants: 72,
-    description: "Manage infrastructure and deployment pipelines for streaming to millions of users.",
-  },
-  {
-    id: "7",
-    title: "Marketing Manager",
-    company: "Tesla",
-    location: "Palo Alto, CA",
-    type: "Full-time",
-    level: "Mid-Senior level",
-    postedDate: "6 days ago",
-    applicants: 118,
-    description: "Drive brand awareness and customer engagement for sustainable energy products.",
-  },
-  {
-    id: "8",
-    title: "Mobile Developer",
-    company: "Uber",
-    location: "San Francisco, CA",
-    type: "Full-time",
-    level: "Associate",
-    postedDate: "2 days ago",
-    applicants: 85,
-    description: "Create seamless mobile experiences for riders and drivers around the world.",
-  },
-  {
-    id: "9",
-    title: "Security Engineer",
-    company: "Cisco",
-    location: "San Jose, CA",
-    type: "Full-time",
-    level: "Mid-Senior level",
-    postedDate: "1 week ago",
-    applicants: 61,
-    description: "Protect critical infrastructure and ensure the security of enterprise systems.",
-  },
-  {
-    id: "10",
-    title: "Business Analyst",
-    company: "Salesforce",
-    location: "San Francisco, CA",
-    type: "Full-time",
-    level: "Associate",
-    postedDate: "4 days ago",
-    applicants: 102,
-    description: "Analyze business processes and drive insights to improve customer success.",
-  },
-];
+    postedDate: new Date(j.created_at).toLocaleDateString(),
+    applicants: j.candidate_count,
+    description: `${j.headcount} opening${j.headcount !== 1 ? 's' : ''}`,
+  };
+}
 
 export function JobAdvertisements() {
-  const [selectedJob, setSelectedJob] = useState<Job>(mockJobs[0]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [locationQuery, setLocationQuery] = useState("");
+
+  useEffect(() => {
+    api.jobs.list()
+      .then((summaries) => {
+        const open = summaries.filter((j) => OPEN_STATUSES.has(j.status));
+        const mapped = open.map(summaryToJob);
+        setJobs(mapped);
+        if (mapped.length > 0) setSelectedJob(mapped[0]);
+      })
+      .catch(() => toast.error('Failed to load jobs.'))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const filtered = jobs.filter((j) => {
+    const matchesSearch = j.title.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesLocation = !locationQuery || j.location.toLowerCase().includes(locationQuery.toLowerCase());
+    return matchesSearch && matchesLocation;
+  });
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -134,9 +58,9 @@ export function JobAdvertisements() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
-                <span className="text-white font-bold">in</span>
+                <span className="text-white font-bold text-xs">RS</span>
               </div>
-              <h1 className="font-semibold hidden sm:block">LinkedIn Jobs</h1>
+              <h1 className="font-semibold hidden sm:block">RecruitSquad Jobs</h1>
             </div>
 
             <div className="flex-1 flex gap-2">
@@ -184,7 +108,7 @@ export function JobAdvertisements() {
 
           <p className="text-sm text-gray-600">
             <span className="hidden sm:inline">Showing </span>
-            {mockJobs.length} jobs
+            {isLoading ? '…' : filtered.length} job{filtered.length !== 1 ? 's' : ''}
           </p>
         </div>
       </div>
@@ -210,14 +134,24 @@ export function JobAdvertisements() {
 
           {/* Job List */}
           <div className="w-full lg:w-96 flex-shrink-0 bg-white border-r overflow-y-auto">
-            {mockJobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                onClick={() => setSelectedJob(job)}
-                isActive={selectedJob.id === job.id}
-              />
-            ))}
+            {isLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                <p>No open positions found.</p>
+              </div>
+            ) : (
+              filtered.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onClick={() => setSelectedJob(job)}
+                  isActive={selectedJob?.id === job.id}
+                />
+              ))
+            )}
           </div>
 
           {/* Job Detail (Desktop) */}
@@ -232,7 +166,7 @@ export function JobAdvertisements() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setSelectedJob(mockJobs[0])}
+                  onClick={() => setSelectedJob(filtered[0] ?? null)}
                 >
                   <X className="w-5 h-5" />
                 </Button>

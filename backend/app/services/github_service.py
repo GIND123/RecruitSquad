@@ -92,7 +92,11 @@ def get_user_profile(login: str) -> dict | None:
     except GithubException:
         repos, top_repos, languages = [], [], []
 
-    email = user.email or _email_from_commits(repos, login)
+    email = (
+        user.email
+        or _email_from_events(user)
+        or _email_from_commits(repos, login)
+    )
 
     created_at = None
     try:
@@ -115,16 +119,39 @@ def get_user_profile(login: str) -> dict | None:
     }
 
 
+def _email_from_events(user) -> str | None:
+    """Extract a real email from the user's public push events.
+
+    Push event payloads contain raw commit author emails that are often
+    present even when the profile email is hidden.
+    """
+    try:
+        for event in user.get_public_events():
+            if event.type != "PushEvent":
+                continue
+            for commit in event.payload.get("commits", []):
+                email = (commit.get("author") or {}).get("email", "")
+                if email and "noreply" not in email and "@" in email:
+                    return email
+    except GithubException:
+        pass
+    return None
+
+
 def _email_from_commits(repos: list, login: str) -> str | None:
-    for repo in repos[:3]:
+    """Scan recent commits across the user's top repos for a real email."""
+    for repo in repos[:5]:
         try:
             checked = 0
             for commit in repo.get_commits(author=login):
-                email = commit.commit.author.email or ""
-                if email and "noreply" not in email and "@" in email:
-                    return email
+                for email in (
+                    commit.commit.author.email or "",
+                    commit.commit.committer.email or "",
+                ):
+                    if email and "noreply" not in email and "@" in email:
+                        return email
                 checked += 1
-                if checked >= 3:
+                if checked >= 5:
                     break
         except GithubException:
             continue

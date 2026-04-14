@@ -1,14 +1,23 @@
 import { Link, useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
-import { Building2, User, LogOut, Briefcase } from 'lucide-react';
+import { Building2, User, LogOut } from 'lucide-react';
 
 export const Header = () => {
-  const { user, logout, isManager } = useAuth();
+  const { user, firebaseUser, loading, logout, isManager } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  // Show the authenticated UI as soon as Firebase confirms the session,
+  // even if the Firestore profile fetch is still in flight.
+  const isLoggedIn = !!user || !!firebaseUser;
+  const displayName =
+    user?.name ??
+    firebaseUser?.displayName ??
+    firebaseUser?.email?.split('@')[0] ??
+    'User';
+
+  const handleLogout = async () => {
+    await logout();
     navigate('/');
   };
 
@@ -18,7 +27,7 @@ export const Header = () => {
         <Link to="/" className="flex items-center gap-2">
           <Building2 className="w-8 h-8 text-blue-600" />
           <div>
-            <h1 className="font-semibold text-xl">Google</h1>
+            <h1 className="font-semibold text-xl">RecruitSquad</h1>
             <p className="text-xs text-gray-500">Careers</p>
           </div>
         </Link>
@@ -27,7 +36,7 @@ export const Header = () => {
           <Link to="/jobs" className="text-gray-700 hover:text-gray-900">
             Jobs
           </Link>
-          {user && (
+          {isLoggedIn && (
             <Link to="/profile" className="text-gray-700 hover:text-gray-900">
               My Applications
             </Link>
@@ -40,12 +49,17 @@ export const Header = () => {
         </nav>
 
         <div className="flex items-center gap-3">
-          {user ? (
+          {loading ? (
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          ) : isLoggedIn ? (
             <>
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full">
+              <Link
+                to="/profile"
+                className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+              >
                 <User className="w-4 h-4 text-gray-600" />
-                <span className="text-sm">{user.name}</span>
-              </div>
+                <span className="text-sm">{displayName}</span>
+              </Link>
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
