@@ -383,15 +383,3 @@ Root causes identified:
 - Some files contain non-ASCII mojibake text; standardizing encoding to UTF-8 without corruption is recommended.
 - End-to-end reliability still depends on external services (OpenAI, Serper, Firebase, SMTP, Calendly, Google Calendar).
 
-## 13. Recommended Next Engineering Steps
-
-1. Stabilize tests:
-   - isolate backend and email-agent pytest environments
-   - resolve symbol/API drift in Graph4 tests
-   - add network-mocked fixtures for A1/A2/A4 tests
-2. Fix frontend build:
-   - add missing `idb` dependency and lockfile consistency checks
-3. Resolve Graph4/A3 contract mismatch:
-   - either implement `create_zoom_meeting` or update Graph4 to rely on current A3 interface only
-4. Remove or migrate legacy frontend context (`JobContext`) to avoid dual data models
-5. Keep architecture docs in `docs/` synchronized with source changes per release
