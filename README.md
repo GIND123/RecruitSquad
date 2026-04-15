@@ -30,9 +30,10 @@ RecruitSquad/
       pages/
       services/
       routes.tsx
+    seed-manager.mjs   # one-time script to bootstrap first manager account
   docs/
-  deploy.sh
-  setup-secrets.sh
+  deploy.sh            # all-in-one: secrets + Docker + Cloud Run + Firebase Hosting
+  setup-secrets.sh     # standalone: push .env secrets to GCP Secret Manager only
 ```
 
 ## 2. Architecture Overview
@@ -210,6 +211,15 @@ Additional methodology:
   - cultural fit 15%
   - recommendation 10%
 
+### A6 Email Dispatch (Service, not a LangGraph Agent)
+- `backend/app/services/a6_client.py` — not an agent directory, but a shared email dispatch utility used by all graphs.
+- Two delivery paths (checked in order):
+  1. **Direct SMTP** — used when `SMTP_USER` + `SMTP_PASS` are set (Gmail SSL port 465).
+  2. **Email-FAQ microservice** — fallback to `EMAIL_AGENT_URL` (default `localhost:8001`) when SMTP credentials are absent.
+- Fire-and-forget: logs failures, never raises, so graph execution continues even if email fails.
+- Key helpers: `send_outreach_email`, `send_oa_invite`, `send_application_acknowledgment`, `send_interview_invite`, `send_rejection`, `send_salary_report_to_manager`, `send_generic_email`, `send_interview_confirmation`.
+- `DRY_RUN=true` skips all delivery (useful in CI).
+
 ### A7 Audit
 - Read-only audit over job and candidate state.
 - Computes funnel metrics, averages, conversion rates.
@@ -279,6 +289,15 @@ Protected routes:
   - confirm interview slot
   - track applications in profile
 
+### 7.3 Seeding the first manager account
+
+`frontend/seed-manager.mjs` is a one-time Node.js utility that creates a Firebase Auth account and writes a `users/{uid}` Firestore document with `role: "manager"`. Run it before the first login when bootstrapping a new Firebase project:
+
+```bash
+# Edit MANAGER_EMAIL and MANAGER_PASSWORD at the top of the file first
+node frontend/seed-manager.mjs
+```
+
 ## 8. Email FAQ Microservice (`backend/email-faq-agent`)
 
 FastAPI service with endpoints for:
@@ -298,7 +317,7 @@ Deployment mode:
 ## 9. Environment Configuration
 
 ### 9.1 Backend (`backend/.env`)
-Start from `backend/.env.example`. Core keys:
+Create `backend/.env` (no `.env.example` exists — use the table below as reference). Core keys:
 - OpenAI: `OPENAI_API_KEY`
 - Firebase: `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_STORAGE_BUCKET`
 - SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `FROM_EMAIL`
@@ -324,7 +343,44 @@ Expected settings map to:
 
 ## 10. Local Runbook
 
-### Backend API
+### macOS / Linux
+
+#### Backend API
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+#### Frontend
+```bash
+cd frontend
+npm install idb   # required by Firebase — not auto-installed on some Node versions
+npm install
+npm run dev
+```
+
+#### Email FAQ agent
+```bash
+cd backend/email-faq-agent
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8001
+```
+
+Optional Kafka stack:
+```bash
+cd backend/email-faq-agent
+docker compose up -d zookeeper kafka
+docker compose up --build email-agent consumer
+```
+
+### Windows (PowerShell)
+
+#### Backend API
 ```powershell
 cd backend
 python -m venv .venv
@@ -333,14 +389,15 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
+#### Frontend
 ```powershell
 cd frontend
+npm install idb
 npm install
 npm run dev
 ```
 
-### Email FAQ agent
+#### Email FAQ agent
 ```powershell
 cd backend\email-faq-agent
 python -m venv .venv
@@ -356,7 +413,49 @@ docker compose up -d zookeeper kafka
 docker compose up --build email-agent consumer
 ```
 
-## 11. Testing and Current Health (April 15, 2026)
+## 11. Deployment
+
+### Prerequisites
+- `gcloud` CLI: `gcloud auth login && gcloud auth configure-docker && gcloud config set project recruit-squad-7d8e1`
+- `firebase` CLI: `firebase login`
+- `backend/.env` populated with all required keys
+
+### Option A — All-in-one (`deploy.sh`)
+
+Handles secrets, Docker build, Cloud Run deploy, and Firebase Hosting in one script:
+
+```bash
+# Deploy backend only
+./deploy.sh backend
+
+# Deploy frontend only (requires VITE_API_URL set in frontend/.env)
+./deploy.sh frontend
+
+# Deploy both (prompts to update VITE_API_URL between steps)
+./deploy.sh all
+```
+
+### Option B — Secrets only (`setup-secrets.sh`)
+
+Pushes secret values from `backend/.env` to GCP Secret Manager without rebuilding or deploying. Useful when rotating credentials:
+
+```bash
+./setup-secrets.sh
+```
+
+### What gets deployed
+- **Backend** → Google Cloud Run (`recruitsquad-backend`, `us-central1`), image via Cloud Build
+- **Frontend** → Firebase Hosting (`recruit-squad-7d8e1.web.app` / `.firebaseapp.com`)
+- **Secrets** → GCP Secret Manager (keys: `RS_OPENAI_API_KEY`, `RS_FIREBASE_PRIVATE_KEY`, `RS_SMTP_PASS`, `RS_GITHUB_TOKEN`, `RS_SERPER_API_KEY`)
+
+### After first backend deploy
+Update `frontend/.env`:
+```
+VITE_API_URL=https://<cloud-run-url>
+```
+Then run `./deploy.sh frontend`.
+
+## 12. Testing and Current Health (April 15, 2026)
 
 Commands run:
 - `backend`: `python -m pytest -q`
@@ -376,10 +475,14 @@ Root causes identified:
 - A1 tests require outbound OpenAI connectivity; in restricted/no-network environments these fail by connection error.
 - Frontend build fails with unresolved dependency: `idb` required by Firebase package resolution path.
 
-## 12. Known Technical Debt and Risks
+## 13. Known Technical Debt and Risks
 
 - `frontend/src/app/contexts/JobContext.tsx` is legacy localStorage/mock state and is not aligned with the API-backed architecture.
 - Existing docs in `docs/` contain stale assumptions relative to active orchestration code.
 - Some files contain non-ASCII mojibake text; standardizing encoding to UTF-8 without corruption is recommended.
 - End-to-end reliability still depends on external services (OpenAI, Serper, Firebase, SMTP, Calendly, Google Calendar).
+- **ZOOM_* env vars are broken**: `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET` appear in `backend/.env.example` but `create_zoom_meeting` is never implemented in Agent3. These variables have no effect until the Zoom integration is built out.
+- **Legacy backup files**: `graph1 2.py`, `graph2 2.py`, `graph3 2.py`, `chat 2.py`, `auth 2.py`, `agent2/__init__ 2.py`, etc. exist in the repo as space-named duplicates and should be deleted to avoid confusion.
+- **`VITE_API_URL` missing from `frontend/.env.example`**: The frontend requires this key to connect to the backend, but it is not listed in the example file. Add `VITE_API_URL=http://localhost:8000` to `frontend/.env.example`.
+- **A6 is not an agent**: References to "A6" in graph flow descriptions (Graph 3) refer to the email dispatch service (`services/a6_client.py`), not a LangGraph agent. There is no `agents/agent6/` directory.
 
