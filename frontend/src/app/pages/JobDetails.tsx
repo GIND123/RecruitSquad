@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, useSearchParams } from 'react-router';
 import { api, JobDetail } from '../services/apiService';
 import { useAuth } from '../contexts/AuthContext';
 import { Card } from '../components/ui/card';
@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 export const JobDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const refCode = searchParams.get('ref') ?? '';
   const { user, firebaseUser } = useAuth();
   const isLoggedIn = !!user || !!firebaseUser;
   const [job, setJob] = useState<JobDetail | null>(null);
@@ -112,7 +114,7 @@ export const JobDetails = () => {
                 <Button
                   className="w-full mb-3"
                   size="lg"
-                  onClick={() => navigate(`/jobs/${job.job_id}/apply`)}
+                  onClick={() => navigate(`/jobs/${job.job_id}/apply${refCode ? `?ref=${refCode}` : ''}`)}
                 >
                   Apply Now
                 </Button>
@@ -121,7 +123,7 @@ export const JobDetails = () => {
                   className="w-full mb-3"
                   size="lg"
                   variant="outline"
-                  onClick={() => navigate(`/login?next=/jobs/${job.job_id}/apply`)}
+                  onClick={() => navigate(`/login?next=/jobs/${job.job_id}/apply${refCode ? `?ref=${refCode}` : ''}`)}
                 >
                   <LogIn className="w-4 h-4 mr-2" />
                   Sign in to Apply

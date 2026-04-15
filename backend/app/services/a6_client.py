@@ -349,6 +349,68 @@ async def send_generic_email(to: str, subject: str, body: str) -> bool:
     })
 
 
+async def send_org_welcome(
+    manager_name: str,
+    manager_email: str,
+    org_name: str,
+    org_website: str = "",
+) -> bool:
+    """
+    Welcome email sent to the manager who just registered a new organisation.
+    """
+    company = os.environ.get("COMPANY_NAME", "RecruitSquad")
+    body = (
+        f"Hi {manager_name},\n\n"
+        f"Welcome to {company}! Your organisation \"{org_name}\" has been successfully registered.\n\n"
+        f"You can now log in to your manager dashboard to post jobs, review candidates, "
+        f"and manage your recruitment pipeline.\n\n"
+        f"  Dashboard: {os.environ.get('APP_URL', '')}/manager\n"
+    )
+    if org_website:
+        body += f"  Website  : {org_website}\n"
+    body += (
+        f"\nIf you have any questions, just reply to this email.\n\n"
+        f"Best regards,\nThe {company} Team"
+    )
+    return await _post("/send-email", {
+        "to":        manager_email,
+        "subject":   f"Welcome to {company} — {org_name} is live!",
+        "body_text": body,
+    })
+
+
+async def send_org_admin_notification(
+    manager_name: str,
+    manager_email: str,
+    org_name: str,
+    org_website: str = "",
+    action: str = "registered",   # "registered" or "joined"
+) -> bool:
+    """
+    Notify the platform admin (MANAGER_EMAIL) when a new org is created
+    or a manager joins an existing org.
+    """
+    admin_email = os.environ.get("MANAGER_EMAIL", "")
+    if not admin_email:
+        logger.warning("[A6-client] MANAGER_EMAIL not set — org admin notification skipped")
+        return False
+    company = os.environ.get("COMPANY_NAME", "RecruitSquad")
+    verb = "registered" if action == "registered" else "joined"
+    body = (
+        f"A new manager has {verb} on {company}.\n\n"
+        f"  Manager : {manager_name} <{manager_email}>\n"
+        f"  Org     : {org_name}\n"
+    )
+    if org_website:
+        body += f"  Website : {org_website}\n"
+    body += f"\n— {company} Platform"
+    return await _post("/send-email", {
+        "to":        admin_email,
+        "subject":   f"[{company}] New manager {verb}: {org_name}",
+        "body_text": body,
+    })
+
+
 async def send_interview_confirmation(
     candidate_name: str,
     candidate_email: str,
@@ -364,9 +426,9 @@ async def send_interview_confirmation(
         "body_text": (
             f"Hi {candidate_name},\n\n"
             f"Your interview for the {role_title} role has been confirmed.\n\n"
-            f"  Date/Time  : {interview_slot}\n"
-            + (f"  Video Link : {zoom_url}\n" if zoom_url else "")
-            + f"  Interviewer: {interviewer_name}\n\n"
+            f"  Date/Time        : {interview_slot}\n"
+            + (f"  Interview Details: {zoom_url}\n" if zoom_url else "")
+            + f"  Interviewer      : {interviewer_name}\n\n"
             f"Please be ready 5 minutes before the scheduled time.\n\n"
             f"Best regards,\nThe Hiring Team"
         ),

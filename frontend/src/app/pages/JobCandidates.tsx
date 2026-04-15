@@ -11,7 +11,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import {
   ArrowLeft, Trophy, GitBranch, BarChart3, MessageSquare,
-  Github, Linkedin, MapPin, Star, RefreshCw, AlertTriangle
+  Github, Linkedin, MapPin, Star, RefreshCw, AlertTriangle, Send
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -78,67 +78,116 @@ const StageBadge = ({ stage }: { stage: string }) => (
   </span>
 );
 
-const CandidateCard = ({ c }: { c: Candidate }) => (
-  <Card className="p-4">
-    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <p className="font-semibold truncate">{c.name}</p>
-          <StageBadge stage={c.pipeline_stage} />
-          {c.shortlisted && (
-            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">
-              Shortlisted
-            </span>
-          )}
+const CandidateCard = ({
+  c,
+  jobId,
+  onRetry,
+  onSendInvite,
+}: {
+  c: Candidate;
+  jobId?: string;
+  onRetry?: (candidateId: string) => void;
+  onSendInvite?: (candidateId: string) => void;
+}) => {
+  const isRejected = c.pipeline_stage === 'REJECTED';
+  const canInvite = c.pipeline_stage === 'SOURCED' && !c.outreach_sent;
+
+  return (
+    <Card className="p-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <p className="font-semibold truncate">{c.name}</p>
+            <StageBadge stage={c.pipeline_stage} />
+            {c.shortlisted && (
+              <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">
+                Shortlisted
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mb-2">{c.email || '—'}</p>
+          <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+            {c.location && (
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3 h-3" /> {c.location}
+              </span>
+            )}
+            {c.github_url && (
+              <a href={c.github_url} target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 text-blue-600 hover:underline">
+                <Github className="w-3 h-3" /> GitHub
+              </a>
+            )}
+            {c.linkedin_url && (
+              <a href={c.linkedin_url} target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 text-blue-600 hover:underline">
+                <Linkedin className="w-3 h-3" /> LinkedIn
+              </a>
+            )}
+          </div>
         </div>
-        <p className="text-sm text-gray-500 mb-2">{c.email || '—'}</p>
-        <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-          {c.location && (
-            <span className="flex items-center gap-1">
-              <MapPin className="w-3 h-3" /> {c.location}
-            </span>
-          )}
-          {c.github_url && (
-            <a href={c.github_url} target="_blank" rel="noreferrer"
-              className="flex items-center gap-1 text-blue-600 hover:underline">
-              <Github className="w-3 h-3" /> GitHub
-            </a>
-          )}
-          {c.linkedin_url && (
-            <a href={c.linkedin_url} target="_blank" rel="noreferrer"
-              className="flex items-center gap-1 text-blue-600 hover:underline">
-              <Linkedin className="w-3 h-3" /> LinkedIn
-            </a>
-          )}
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap gap-4 text-center text-sm">
+            <div>
+              <p className="font-semibold">{score(c.source_score)}</p>
+              <p className="text-xs text-gray-500">Source</p>
+            </div>
+            <div>
+              <p className="font-semibold">{pct(c.oa_score)}</p>
+              <p className="text-xs text-gray-500">OA</p>
+            </div>
+            <div>
+              <p className="font-semibold">{pct(c.behavioral_score)}</p>
+              <p className="text-xs text-gray-500">Behavioral</p>
+            </div>
+            <div>
+              <p className={`font-bold ${(c.composite_score ?? 0) >= 75 ? 'text-green-600' : (c.composite_score ?? 0) > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {composite(c.composite_score)}
+              </p>
+              <p className="text-xs text-gray-500">Composite</p>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            {canInvite && jobId && onSendInvite && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7 border-blue-200 text-blue-600 hover:bg-blue-50"
+                onClick={() => onSendInvite(c.candidate_id)}
+              >
+                <Send className="w-3 h-3 mr-1" /> Send Invite
+              </Button>
+            )}
+            {c.pipeline_stage === 'SOURCED' && c.outreach_sent && (
+              <span className="text-xs text-gray-400 flex items-center gap-1 h-7">
+                <Send className="w-3 h-3" /> Invited
+              </span>
+            )}
+            {isRejected && jobId && onRetry && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs h-7 border-red-200 text-red-600 hover:bg-red-50"
+                onClick={() => onRetry(c.candidate_id)}
+              >
+                <RefreshCw className="w-3 h-3 mr-1" /> Retry Screening
+              </Button>
+            )}
+          </div>
         </div>
       </div>
-      <div className="flex flex-wrap gap-4 text-center text-sm shrink-0">
-        <div>
-          <p className="font-semibold">{score(c.source_score)}</p>
-          <p className="text-xs text-gray-500">Source</p>
-        </div>
-        <div>
-          <p className="font-semibold">{pct(c.oa_score)}</p>
-          <p className="text-xs text-gray-500">OA</p>
-        </div>
-        <div>
-          <p className="font-semibold">{pct(c.behavioral_score)}</p>
-          <p className="text-xs text-gray-500">Behavioral</p>
-        </div>
-        <div>
-          <p className={`font-bold ${(c.composite_score ?? 0) >= 75 ? 'text-green-600' : (c.composite_score ?? 0) > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
-            {composite(c.composite_score)}
-          </p>
-          <p className="text-xs text-gray-500">Composite</p>
-        </div>
-      </div>
-    </div>
-  </Card>
-);
+    </Card>
+  );
+};
 
 // ── Rankings Tab ──────────────────────────────────────────────────────────────
 
-const RankingsTab = ({ candidates }: { candidates: Candidate[] }) => {
+const RankingsTab = ({
+  candidates,
+  jobId,
+  onRetry,
+  onSendInvite,
+}: { candidates: Candidate[]; jobId: string; onRetry: (id: string) => void; onSendInvite: (id: string) => void }) => {
   const ranked = [...candidates]
     .filter((c) => c.composite_score != null)
     .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999));
@@ -161,7 +210,7 @@ const RankingsTab = ({ candidates }: { candidates: Candidate[] }) => {
                 {i + 1}
               </div>
               <div className="flex-1">
-                <CandidateCard c={c} />
+                <CandidateCard c={c} jobId={jobId} onRetry={onRetry} onSendInvite={onSendInvite} />
               </div>
             </div>
           ))}
@@ -170,7 +219,7 @@ const RankingsTab = ({ candidates }: { candidates: Candidate[] }) => {
       {unscored.length > 0 && (
         <div className="space-y-3 mt-6">
           <p className="text-sm text-gray-400 font-medium">Not yet scored ({unscored.length})</p>
-          {unscored.map((c) => <CandidateCard key={c.candidate_id} c={c} />)}
+          {unscored.map((c) => <CandidateCard key={c.candidate_id} c={c} jobId={jobId} onRetry={onRetry} onSendInvite={onSendInvite} />)}
         </div>
       )}
     </div>
@@ -179,7 +228,12 @@ const RankingsTab = ({ candidates }: { candidates: Candidate[] }) => {
 
 // ── Pipeline Tab ──────────────────────────────────────────────────────────────
 
-const PipelineTab = ({ candidates }: { candidates: Candidate[] }) => {
+const PipelineTab = ({
+  candidates,
+  jobId,
+  onRetry,
+  onSendInvite,
+}: { candidates: Candidate[]; jobId: string; onRetry: (id: string) => void; onSendInvite: (id: string) => void }) => {
   const grouped = STAGE_ORDER.reduce<Record<string, Candidate[]>>((acc, stage) => {
     const group = candidates.filter((c) => c.pipeline_stage === stage);
     if (group.length) acc[stage] = group;
@@ -199,7 +253,7 @@ const PipelineTab = ({ candidates }: { candidates: Candidate[] }) => {
             <span className="text-sm text-gray-500">{list.length} candidate{list.length !== 1 ? 's' : ''}</span>
           </div>
           <div className="space-y-3 pl-2 border-l-2 border-gray-100">
-            {list.map((c) => <CandidateCard key={c.candidate_id} c={c} />)}
+            {list.map((c) => <CandidateCard key={c.candidate_id} c={c} jobId={jobId} onRetry={onRetry} onSendInvite={onSendInvite} />)}
           </div>
         </div>
       ))}
@@ -231,7 +285,7 @@ const ScoreInput = ({
 
 // ── Interview Feedback Tab ────────────────────────────────────────────────────
 
-const FeedbackTab = ({ jobId, candidates }: { jobId: string; candidates: Candidate[] }) => {
+const FeedbackTab = ({ jobId, candidates, jobTotalRounds }: { jobId: string; candidates: Candidate[]; jobTotalRounds: number }) => {
   const eligible = candidates.filter((c) =>
     ['SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_DONE'].includes(c.pipeline_stage)
   );
@@ -239,7 +293,7 @@ const FeedbackTab = ({ jobId, candidates }: { jobId: string; candidates: Candida
   const [selectedId, setSelectedId] = useState('');
   const [form, setForm] = useState({
     round_number: 1,
-    total_rounds: 1,
+    total_rounds: jobTotalRounds > 0 ? jobTotalRounds : 1,
     result: '' as 'SELECTED' | 'REJECTED' | '',
     feedback: '',
     interviewer_name: '',
@@ -262,7 +316,7 @@ const FeedbackTab = ({ jobId, candidates }: { jobId: string; candidates: Candida
     const c = candidates.find((x) => x.candidate_id === selectedId);
     if (!c) return;
     const nextRound = Math.max(1, (c.current_round ?? 0) + 1);
-    const totalRounds = c.total_rounds > 0 ? c.total_rounds : 1;
+    const totalRounds = c.total_rounds > 0 ? c.total_rounds : (jobTotalRounds > 0 ? jobTotalRounds : 1);
     setForm((p) => ({
       ...p,
       round_number: Math.min(nextRound, totalRounds),
@@ -289,7 +343,8 @@ const FeedbackTab = ({ jobId, candidates }: { jobId: string; candidates: Candida
       });
       toast.success(`Feedback submitted for ${selected?.name}.`);
       setForm({
-        round_number: 1, total_rounds: 1, result: '', feedback: '', interviewer_name: '',
+        round_number: 1, total_rounds: jobTotalRounds > 0 ? jobTotalRounds : 1,
+        result: '', feedback: '', interviewer_name: '',
         technical_score: 5, communication_score: 5, problem_solving_score: 5,
         cultural_fit_score: 5, recommendation: '',
       });
@@ -315,37 +370,38 @@ const FeedbackTab = ({ jobId, candidates }: { jobId: string; candidates: Candida
     <Card className="p-6 max-w-2xl">
       <h3 className="font-semibold mb-4">Submit Interview Feedback</h3>
       <form onSubmit={handleSubmit} className="space-y-5">
-        {/* Candidate + round */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <Label>Candidate *</Label>
-            <Select value={selectedId} onValueChange={setSelectedId}>
-              <SelectTrigger className="mt-1.5">
-                <SelectValue placeholder="Select a candidate" />
-              </SelectTrigger>
-              <SelectContent>
-                {eligible.map((c) => (
-                  <SelectItem key={c.candidate_id} value={c.candidate_id}>
-                    {c.name} — {STAGE_LABEL[c.pipeline_stage]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Interviewer Name</Label>
-            <Input
-              placeholder="e.g. Jane Smith"
-              value={form.interviewer_name}
-              onChange={(e) => setF('interviewer_name', e.target.value)}
-              className="mt-1.5"
-            />
-          </div>
+        {/* Candidate */}
+        <div>
+          <Label>Candidate *</Label>
+          <Select value={selectedId} onValueChange={setSelectedId}>
+            <SelectTrigger className="mt-1.5">
+              <SelectValue placeholder="Select a candidate" />
+            </SelectTrigger>
+            <SelectContent>
+              {eligible.map((c) => (
+                <SelectItem key={c.candidate_id} value={c.candidate_id}>
+                  {c.name}{c.email ? ` (${c.email})` : ''} — {STAGE_LABEL[c.pipeline_stage]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Interviewer info */}
+        <div>
+          <Label>Interviewer Name</Label>
+          <Input
+            placeholder="e.g. Jane Smith"
+            value={form.interviewer_name}
+            onChange={(e) => setF('interviewer_name', e.target.value)}
+            className="mt-1.5"
+          />
         </div>
 
         {selected && (
-          <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
-            Current round: {selected.current_round} / {selected.total_rounds || '?'}
+          <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 space-y-0.5">
+            {selected.email && <div>Email: {selected.email}</div>}
+            <div>Current round: {selected.current_round} / {selected.total_rounds || '?'}</div>
           </div>
         )}
 
@@ -587,6 +643,35 @@ export const JobCandidates = () => {
     }
   };
 
+  const handleRetry = async (candidateId: string) => {
+    if (!jobId) return;
+    try {
+      await api.candidates.retryScreening(jobId, candidateId);
+      toast.success('Screening pipeline re-triggered. Refresh in a moment to see the updated status.');
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to retry screening.');
+    }
+  };
+
+  const handleSendInvite = async (candidateId: string) => {
+    if (!jobId) return;
+    // Optimistically mark as sent in local state so the button disappears immediately
+    setCandidates((prev) =>
+      prev.map((c) => c.candidate_id === candidateId ? { ...c, outreach_sent: true } : c)
+    );
+    try {
+      await api.candidates.sendOutreachInvite(jobId, candidateId);
+      const name = candidates.find((c) => c.candidate_id === candidateId)?.name ?? 'Candidate';
+      toast.success(`Invite sent to ${name}.`);
+    } catch (err: any) {
+      // Roll back the optimistic update on failure
+      setCandidates((prev) =>
+        prev.map((c) => c.candidate_id === candidateId ? { ...c, outreach_sent: false } : c)
+      );
+      toast.error(err.message ?? 'Failed to send invite.');
+    }
+  };
+
   useEffect(() => { load(); }, [jobId]);
 
   if (isLoading) {
@@ -671,15 +756,15 @@ export const JobCandidates = () => {
           </TabsList>
 
           <TabsContent value="rankings">
-            <RankingsTab candidates={candidates} />
+            <RankingsTab candidates={candidates} jobId={jobId!} onRetry={handleRetry} onSendInvite={handleSendInvite} />
           </TabsContent>
 
           <TabsContent value="pipeline">
-            <PipelineTab candidates={candidates} />
+            <PipelineTab candidates={candidates} jobId={jobId!} onRetry={handleRetry} onSendInvite={handleSendInvite} />
           </TabsContent>
 
           <TabsContent value="feedback">
-            <FeedbackTab jobId={jobId!} candidates={candidates} />
+            <FeedbackTab jobId={jobId!} candidates={candidates} jobTotalRounds={job?.total_interview_rounds ?? 1} />
           </TabsContent>
 
           <TabsContent value="report">

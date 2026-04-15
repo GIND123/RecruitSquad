@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
+from google.cloud.firestore_v1 import Increment
 
 from app.models.schemas import CandidateProfile
 
@@ -103,6 +104,11 @@ def persist_candidates(job_id: str, candidates: list[CandidateProfile]) -> list[
 
         col.document(candidate_id).set(doc)
         ids.append(candidate_id)
+
+    if ids:
+        db.collection("jobs").document(job_id).update(
+            {"candidate_count": Increment(len(ids))}
+        )
 
     return ids
 
@@ -320,10 +326,100 @@ def find_candidates_by_email(email: str) -> list[dict]:
     return results
 
 
-def get_all_jobs() -> list[dict]:
-    """Return all job documents (used by audit and reporting endpoints)."""
+def find_candidate_by_email_for_job(job_id: str, email: str) -> dict | None:
+    """Return the first candidate doc in a job whose email matches, or None."""
     db = get_db()
-    return [doc.to_dict() for doc in db.collection("jobs").stream()]
+    docs = (
+        db.collection("jobs").document(job_id)
+        .collection("candidates")
+        .where("email", "==", email)
+        .limit(1)
+        .stream()
+    )
+    for doc in docs:
+        return doc.to_dict()
+    return None
+
+
+def get_all_jobs(org_id: str | None = None) -> list[dict]:
+    """Return job documents, optionally filtered by org_id."""
+    db = get_db()
+    col = db.collection("jobs")
+    if org_id:
+        docs = col.where("org_id", "==", org_id).stream()
+    else:
+        docs = col.stream()
+    return [doc.to_dict() for doc in docs]
+
+
+# ── Organisation helpers ───────────────────────────────────────────────────────
+
+def create_org(
+    name: str,
+    creator_uid: str,
+    creator_email: str = "",
+    creator_name: str = "",
+    website: str = "",
+    description: str = "",
+) -> str:
+    """Create an organisation document and link the creator as a manager. Returns org_id."""
+    db = get_db()
+    org_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    db.collection("organizations").document(org_id).set({
+        "org_id": org_id,
+        "name": name,
+        "website": website,
+        "description": description,
+        "created_by": creator_uid,
+        "created_at": now,
+    })
+    # Write full user profile so new accounts get role=manager from the start,
+    # avoiding any candidate→manager race condition on the frontend.
+    user_data: dict = {
+        "uid": creator_uid,
+        "org_id": org_id,
+        "org_name": name,
+        "role": "manager",
+    }
+    if creator_email:
+        user_data["email"] = creator_email
+    if creator_name:
+        user_data["name"] = creator_name
+    if not db.collection("users").document(creator_uid).get().exists:
+        user_data["createdAt"] = now.isoformat()
+    db.collection("users").document(creator_uid).set(user_data, merge=True)
+    return org_id
+
+
+def get_org(org_id: str) -> dict | None:
+    db = get_db()
+    doc = db.collection("organizations").document(org_id).get()
+    return doc.to_dict() if doc.exists else None
+
+
+def get_all_orgs() -> list[dict]:
+    db = get_db()
+    return [doc.to_dict() for doc in db.collection("organizations").stream()]
+
+
+def join_org(uid: str, org_id: str) -> bool:
+    """Link an existing user to an org as a manager. Returns False if org not found."""
+    db = get_db()
+    org_doc = db.collection("organizations").document(org_id).get()
+    if not org_doc.exists:
+        return False
+    org = org_doc.to_dict() or {}
+    db.collection("users").document(uid).set(
+        {"org_id": org_id, "org_name": org.get("name", ""), "role": "manager"},
+        merge=True,
+    )
+    return True
+
+
+def update_user(uid: str, data: dict) -> None:
+    db = get_db()
+    db.collection("users").document(uid).set(data, merge=True)
 
 
 def inject_seed_candidate(job_id: str, email: str, name: str = "Test Candidate") -> str:
@@ -545,4 +641,5 @@ def create_applied_candidate(
     }
 
     db.collection("jobs").document(job_id).collection("candidates").document(candidate_id).set(doc)
+    db.collection("jobs").document(job_id).update({"candidate_count": Increment(1)})
     return candidate_id

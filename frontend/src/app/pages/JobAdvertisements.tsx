@@ -14,7 +14,7 @@ function summaryToJob(j: JobSummary): Job {
   return {
     id: j.job_id,
     title: j.title,
-    company: "RecruitSquad",
+    company: j.org_name || "RecruitSquad",
     location: "See details",
     type: "Full-time",
     level: "Mid-Senior level",

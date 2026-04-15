@@ -20,13 +20,13 @@ from app.models.schemas import (
 from app.models.states import ScreeningState, SourcingState
 from app.services.firestore_service import (
     create_applied_candidate,
+    find_candidate_by_email_for_job,
     find_candidate_by_id,
     find_candidate_by_referral_token,
     get_all_jobs,
     get_candidate,
     get_candidates,
     get_job,
-    inject_seed_candidate,
     update_candidate,
     update_job,
     upload_resume_to_storage,
@@ -38,10 +38,13 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 @router.post("", response_model=JobResponse, status_code=201)
 async def create_job(payload: JobCreateRequest, background_tasks: BackgroundTasks,
-                     _=Depends(require_manager)):
+                     manager=Depends(require_manager)):
     """Create a job and trigger Agent 1 sourcing in the background."""
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
+
+    org_id = manager.get("org_id", "")
+    org_name = manager.get("org_name", "")
 
     job_doc = {
         "job_id": job_id,
@@ -58,15 +61,12 @@ async def create_job(payload: JobCreateRequest, background_tasks: BackgroundTask
         "referrals_enabled": payload.referrals_enabled,
         "status": "PENDING",
         "candidate_count": 0,
+        "org_id": org_id,
+        "org_name": org_name,
         "created_at": now,
     }
     update_job(job_id, job_doc)
-    logger.info("[jobs] created job=%s title=%r", job_id, payload.title)
-
-    # Always enrol the seed candidate so they go through the full pipeline
-    _SEED_EMAIL = "ak395@umd.edu"
-    seed_id = inject_seed_candidate(job_id, email=_SEED_EMAIL, name="Abhinav Kumar")
-    logger.info("[jobs] seed candidate injected job=%s candidate=%s email=%s", job_id, seed_id, _SEED_EMAIL)
+    logger.info("[jobs] created job=%s title=%r org=%s", job_id, payload.title, org_id)
 
     initial_state: SourcingState = {
         "job_id": job_id,
@@ -87,6 +87,8 @@ async def create_job(payload: JobCreateRequest, background_tasks: BackgroundTask
         headcount=payload.headcount,
         candidate_count=0,
         created_at=now,
+        org_id=org_id,
+        org_name=org_name,
     )
 
 
@@ -108,9 +110,9 @@ async def _run_agent1(state: SourcingState) -> None:
 
 
 @router.get("", response_model=list[JobResponse])
-async def list_jobs():
-    """Return all job postings."""
-    jobs = get_all_jobs()
+async def list_jobs(org_id: str | None = None):
+    """Return job postings, optionally filtered by org_id."""
+    jobs = get_all_jobs(org_id=org_id)
     return [
         JobResponse(
             job_id=j.get("job_id", ""),
@@ -119,6 +121,8 @@ async def list_jobs():
             headcount=j.get("headcount", 1),
             candidate_count=j.get("candidate_count", 0),
             created_at=j.get("created_at", datetime.now(timezone.utc)),
+            org_id=j.get("org_id", ""),
+            org_name=j.get("org_name", ""),
         )
         for j in jobs
     ]
@@ -197,34 +201,59 @@ async def apply_to_job(
             is_referred = True
             logger.info("[jobs] referral token matched job=%s sourced_candidate=%s", job_id, sourced_id)
 
-    candidate_id = str(uuid.uuid4())
-
-    # Upload resume to Firebase Storage
-    try:
-        resume_url = upload_resume_to_storage(
+    # Deduplication: if a sourced candidate with the same email already exists,
+    # merge the portal application into them instead of creating a duplicate.
+    existing = find_candidate_by_email_for_job(job_id, email)
+    if existing:
+        candidate_id = existing["candidate_id"]
+        logger.info("[jobs] merging portal application into existing sourced candidate "
+                    "job=%s candidate=%s email=%s", job_id, candidate_id, email)
+        try:
+            resume_url = upload_resume_to_storage(
+                job_id=job_id,
+                candidate_id=candidate_id,
+                file_bytes=file_bytes,
+                filename=resume.filename or "resume",
+            )
+        except Exception as exc:
+            logger.error("[jobs] resume upload failed job=%s: %s", job_id, exc)
+            resume_url = ""
+        update_candidate(job_id, candidate_id, {
+            "applied_via_portal": True,
+            "resume_url": resume_url,
+            "resume_filename": resume.filename or "",
+            "is_referred": is_referred,
+            **({"referral_token_used": referral_token} if referral_token else {}),
+            **({"salary_expectation": salary_expectation} if salary_expectation is not None else {}),
+            **({"current_location": current_location} if current_location else {}),
+            "open_to_relocation": open_to_relocation,
+            "pipeline_stage": existing.get("pipeline_stage") or "APPLIED",
+        })
+    else:
+        candidate_id = str(uuid.uuid4())
+        try:
+            resume_url = upload_resume_to_storage(
+                job_id=job_id,
+                candidate_id=candidate_id,
+                file_bytes=file_bytes,
+                filename=resume.filename or "resume",
+            )
+        except Exception as exc:
+            logger.error("[jobs] resume upload failed job=%s: %s", job_id, exc)
+            resume_url = ""
+        create_applied_candidate(
             job_id=job_id,
             candidate_id=candidate_id,
-            file_bytes=file_bytes,
-            filename=resume.filename or "resume",
+            name=name,
+            email=email,
+            resume_url=resume_url,
+            resume_filename=resume.filename or "",
+            is_referred=is_referred,
+            referral_token_used=referral_token or None,
+            salary_expectation=salary_expectation,
+            current_location=current_location,
+            open_to_relocation=open_to_relocation,
         )
-    except Exception as exc:
-        logger.error("[jobs] resume upload failed job=%s: %s", job_id, exc)
-        resume_url = ""
-
-    # Create candidate document with the same candidate_id used for storage
-    create_applied_candidate(
-        job_id=job_id,
-        candidate_id=candidate_id,
-        name=name,
-        email=email,
-        resume_url=resume_url,
-        resume_filename=resume.filename or "",
-        is_referred=is_referred,
-        referral_token_used=referral_token or None,
-        salary_expectation=salary_expectation,
-        current_location=current_location,
-        open_to_relocation=open_to_relocation,
-    )
 
     logger.info("[jobs] portal application job=%s candidate=%s email=%s referred=%s",
                 job_id, candidate_id, email, is_referred)
@@ -339,6 +368,97 @@ async def _run_screening(job_id: str, candidate_id: str) -> None:
     except Exception as exc:
         logger.error("[jobs] Graph2 pipeline failed job=%s candidate=%s: %s",
                      job_id, candidate_id, exc)
+
+
+@router.post(
+    "/{job_id}/candidates/{candidate_id}/retry-screening",
+    status_code=202,
+)
+async def retry_screening(
+    job_id: str,
+    candidate_id: str,
+    background_tasks: BackgroundTasks,
+    _=Depends(require_manager),
+):
+    """
+    Re-run Graph 2 (scoring + shortlist/invite) for a candidate who already
+    submitted their OA. Resets pipeline_stage off REJECTED so the routing
+    works correctly, then fires the screening pipeline again.
+    """
+    if not get_job(job_id):
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    candidate = get_candidate(job_id, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
+
+    # Clear the REJECTED stage so Graph 2 routing isn't confused by stale state
+    current_stage = candidate.get("pipeline_stage", "")
+    if current_stage == "REJECTED":
+        oa_passed = candidate.get("oa_passed", False)
+        update_candidate(job_id, candidate_id, {
+            "pipeline_stage": "OA_SENT" if oa_passed else "SCORED",
+            "shortlisted": False,
+        })
+
+    logger.info("[jobs] retry-screening job=%s candidate=%s", job_id, candidate_id)
+    background_tasks.add_task(_run_screening, job_id=job_id, candidate_id=candidate_id)
+    return {"message": "Screening pipeline re-triggered", "candidate_id": candidate_id, "job_id": job_id}
+
+
+@router.post(
+    "/{job_id}/candidates/{candidate_id}/send-invite",
+    status_code=200,
+)
+async def send_candidate_invite(
+    job_id: str,
+    candidate_id: str,
+    background_tasks: BackgroundTasks,
+    _=Depends(require_manager),
+):
+    """
+    Manager-triggered outreach: send the job posting link to a sourced candidate.
+    Idempotency: returns 409 if the invite was already sent.
+    Generates a referral token when referrals_enabled=True on the job.
+    """
+    import os
+    import secrets
+    from app.services.a6_client import send_outreach_email
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    candidate = get_candidate(job_id, candidate_id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
+
+    if candidate.get("outreach_sent"):
+        raise HTTPException(status_code=409, detail="Invite already sent to this candidate")
+
+    referrals_enabled = bool(job.get("referrals_enabled", False))
+    app_url = os.environ.get("APP_URL", "http://localhost:5173").rstrip("/")
+    job_link = f"{app_url}/jobs/{job_id}"
+
+    if referrals_enabled:
+        token = secrets.token_urlsafe(8)
+        update_candidate(job_id, candidate_id, {"referral_token": token, "outreach_sent": True})
+        job_link = f"{job_link}?ref={token}"
+    else:
+        update_candidate(job_id, candidate_id, {"outreach_sent": True})
+
+    background_tasks.add_task(
+        send_outreach_email,
+        candidate_name=candidate.get("name", "Candidate"),
+        candidate_email=candidate.get("email", ""),
+        role_title=job.get("title", "the position"),
+        job_link=job_link,
+        company_name=job.get("org_name") or os.environ.get("COMPANY_NAME", "RecruitSquad"),
+    )
+
+    logger.info(
+        "[jobs] invite sent job=%s candidate=%s email=%s",
+        job_id, candidate_id, candidate.get("email"),
+    )
+    return {"sent": True, "candidate_id": candidate_id}
 
 
 @router.post(

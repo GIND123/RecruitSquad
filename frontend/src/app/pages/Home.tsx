@@ -24,10 +24,10 @@ export const Home = () => {
           <Button
             size="lg"
             variant="outline"
-            onClick={() => navigate('/org-register')}
+            onClick={() => navigate('/employer')}
             className="text-lg px-8"
           >
-            Organization Login
+            For Employers
           </Button>
         </div>
       </section>
@@ -85,7 +85,7 @@ export const Home = () => {
           <Button
             size="lg"
             variant="secondary"
-            onClick={() => navigate('/org-register')}
+            onClick={() => navigate('/employer/new')}
             className="text-lg px-8"
           >
             Get Started

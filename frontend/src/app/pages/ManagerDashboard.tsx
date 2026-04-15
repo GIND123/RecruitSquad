@@ -31,7 +31,7 @@ export const ManagerDashboard = () => {
   const load = async () => {
     setIsLoading(true);
     try {
-      const data = await api.jobs.list();
+      const data = await api.jobs.list(user?.org_id);
       setJobs(data);
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to load jobs.');
@@ -40,7 +40,7 @@ export const ManagerDashboard = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [user?.org_id]);
 
   const activeJobs      = jobs.filter((j) => ['ACTIVE', 'SCHEDULING', 'SCHEDULED'].includes(j.status));
   const sourcingJobs    = jobs.filter((j) => ['PENDING', 'SOURCING', 'SOURCED'].includes(j.status));
@@ -54,7 +54,9 @@ export const ManagerDashboard = () => {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold">Manager Dashboard</h1>
-              <p className="opacity-80 mt-1">Welcome, {user?.name}</p>
+              <p className="opacity-80 mt-1">
+                {user?.org_name ? `${user.org_name} · ` : ''}Welcome, {user?.name}
+              </p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" className="bg-white/10 border-white/30 text-white hover:bg-white/20" onClick={load}>

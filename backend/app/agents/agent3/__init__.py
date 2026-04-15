@@ -195,15 +195,6 @@ async def create_google_calendar_event(
                     "dateTime": end_dt.isoformat(),
                     "timeZone": slot_timezone,
                 },
-                "attendees": [
-                    {"email": candidate_email, "displayName": candidate_name},
-                ],
-                "conferenceData": {
-                    "createRequest": {
-                        "requestId": str(_uuid_mod.uuid4()),
-                        "conferenceSolutionKey": {"type": "hangoutsMeet"},
-                    }
-                },
                 "reminders": {
                     "useDefault": False,
                     "overrides": [
@@ -218,24 +209,15 @@ async def create_google_calendar_event(
                 .insert(
                     calendarId=calendar_id,
                     body=event_body,
-                    conferenceDataVersion=1,
-                    sendUpdates="all",  # sends invite email to attendees
                 )
                 .execute()
             )
 
-            # Extract the Meet link
-            meet_link = (
-                created.get("conferenceData", {})
-                       .get("entryPoints", [{}])[0]
-                       .get("uri", "")
-            )
-            logger.info(
-                "[A3] Google Calendar event created: %s meet=%s",
-                created.get("htmlLink", ""),
-                meet_link,
-            )
-            return meet_link
+            # Return the Google Calendar event link so the candidate can view details.
+            # (Meet links require Google Workspace; we return the event htmlLink instead.)
+            event_link = created.get("htmlLink", "")
+            logger.info("[A3] Google Calendar event created: %s", event_link)
+            return event_link
 
         except Exception as exc:
             logger.warning("[A3] Google Calendar API call failed: %s", exc)

@@ -49,7 +49,7 @@ def _get_openai() -> OpenAI:
 
 # ── 1. JD Parsing ─────────────────────────────────────────────────────────────
 
-def parse_jd(jd_text: str) -> dict[str, Any]:
+def parse_jd(jd_text: str, fallback_exp: tuple[int, int] = (0, 5)) -> dict[str, Any]:
     response = _get_openai().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -72,8 +72,10 @@ def parse_jd(jd_text: str) -> dict[str, Any]:
 
     result = json.loads(response.choices[0].message.content)
     tech_stack: list[str] = result.get("tech_stack", [])
-    exp = result.get("experience_range", [0, 5])
-    experience_range: tuple[int, int] = (int(exp[0]), int(exp[1]))
+    exp = result.get("experience_range") or []
+    exp_min = int(exp[0]) if len(exp) > 0 and exp[0] is not None else fallback_exp[0]
+    exp_max = int(exp[1]) if len(exp) > 1 and exp[1] is not None else fallback_exp[1]
+    experience_range: tuple[int, int] = (exp_min, exp_max)
     locations: list[str] = result.get("locations", [])
 
     logger.info("JD parsed — tech_stack=%s exp=%s locations=%s",
@@ -136,17 +138,71 @@ def _name_key(name: str) -> str:
 
 # ── 3. Main Entry Node ────────────────────────────────────────────────────────
 
+import os as _os
+
+_TEST_MODE   = _os.environ.get("TEST_MODE", "false").lower() in ("1", "true", "yes")
+_TEST_GITHUB = _os.environ.get("TEST_CANDIDATE_GITHUB", "abhinavkumar333")
+
+
+def _fetch_test_candidate() -> CandidateProfile:
+    """Fetch the real GitHub profile for the test account and return a CandidateProfile."""
+    from app.services.github_service import get_user_profile
+    from app.utils.sourcing_utils import _dict_to_github_profile
+
+    raw = get_user_profile(_TEST_GITHUB)
+    if raw:
+        gh = _dict_to_github_profile(raw)
+        if gh:
+            return CandidateProfile(
+                name=gh.name,
+                email=gh.email,
+                github_url=gh.github_url,
+                location=gh.location,
+                bio=gh.bio,
+                top_repos=gh.top_repos,
+                languages=gh.languages,
+                public_repos=gh.public_repos,
+                followers=gh.followers,
+                source="github",
+            )
+    # Fallback if GitHub API is unavailable
+    logger.warning("[A1] TEST_MODE — could not fetch GitHub profile for %s, using minimal fallback", _TEST_GITHUB)
+    return CandidateProfile(
+        name=_TEST_GITHUB,
+        github_url=f"https://github.com/{_TEST_GITHUB}",
+        source="github",
+    )
+
+
 async def run_sourcing_hunter(
     state: SourcingState,
     max_results: int = DEFAULT_MAX_RESULTS,
 ) -> SourcingState:
     job_id  = state["job_id"]
     jd_text = state["jd_text"]
-    cfg     = make_search_config(max_results)
+
+    if _TEST_MODE:
+        logger.info("[A1] TEST_MODE — fetching real GitHub profile for %s", _TEST_GITHUB)
+        candidate = _fetch_test_candidate()
+        logger.info("[A1] TEST_MODE — sourced name=%s email=%s", candidate.name, candidate.email or "(none)")
+        persist_candidates(job_id, [candidate])
+        update_job(job_id, {"status": "SOURCING", "tech_stack": []})
+        return {
+            **state,
+            "tech_stack": [],
+            "experience_range": state.get("experience_range", (0, 10)),
+            "locations": state.get("locations", []),
+            "sourced_candidates": [candidate],
+            "outreach_sent": False,
+            "graph1_complete": False,
+        }
+
+    cfg = make_search_config(max_results)
     logger.info("[A1] job=%s max_results=%d → %s", job_id, max_results,
                 "TIGHT" if max_results <= 20 else "MEDIUM" if max_results <= 35 else "LOOSE")
 
-    parsed           = parse_jd(jd_text)
+    # parse_jd is a blocking OpenAI call — run in thread to avoid blocking the event loop
+    parsed           = await asyncio.to_thread(parse_jd, jd_text, state.get("experience_range", (0, 5)))
     tech_stack       = parsed["tech_stack"]
     experience_range = parsed["experience_range"]
     locations        = parsed["locations"]
@@ -165,8 +221,9 @@ async def run_sourcing_hunter(
     logger.info("[A1] Merged: %d unique candidates", len(sourced_candidates))
 
     if sourced_candidates:
-        persist_candidates(job_id, sourced_candidates)
-        update_job(job_id, {"status": "SOURCING", "tech_stack": tech_stack})
+        # Firestore writes are synchronous — run in thread
+        await asyncio.to_thread(persist_candidates, job_id, sourced_candidates)
+        await asyncio.to_thread(update_job, job_id, {"status": "SOURCING", "tech_stack": tech_stack})
 
     return {
         **state,

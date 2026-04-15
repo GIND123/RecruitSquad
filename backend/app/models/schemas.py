@@ -27,6 +27,14 @@ class JobResponse(BaseModel):
     headcount: int
     candidate_count: int
     created_at: datetime
+    org_id: str = ""
+    org_name: str = ""
+
+
+class OrgCreateRequest(BaseModel):
+    name: str
+    website: str = ""
+    description: str = ""
 
 
 class ScoreBreakdown(BaseModel):

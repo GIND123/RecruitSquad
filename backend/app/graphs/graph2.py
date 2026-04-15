@@ -171,6 +171,19 @@ async def _node_email_invite(state: ScreeningState) -> ScreeningState:
     return {**state, "invite_sent": True}
 
 
+async def _node_await_behavioral(state: ScreeningState) -> ScreeningState:
+    """
+    OA passed but behavioral interview not yet complete.
+    Hold here — chat.py re-triggers the pipeline once behavioral finishes.
+    """
+    job_id       = state["job_id"]
+    candidate_id = state["candidate_id"]
+    logger.info("[Graph2] node: await_behavioral | candidate=%s — holding for behavioral completion",
+                candidate_id)
+    update_candidate(job_id, candidate_id, {"pipeline_stage": "AWAITING_BEHAVIORAL"})
+    return {**state, "graph2_complete": True}
+
+
 async def _node_notify_rejected(state: ScreeningState) -> ScreeningState:
     """Candidate did not score high enough — send rejection email via A6."""
     from app.services.a6_client import send_rejection
@@ -203,9 +216,31 @@ async def _node_notify_rejected(state: ScreeningState) -> ScreeningState:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _route_after_scoring(state: ScreeningState) -> str:
-    shortlisted = bool(state.get("shortlisted"))
+    """
+    Three-way gate:
+      1. OA failed                          → notify_rejected
+      2. OA passed, behavioral not done yet → await_behavioral (hold; chat.py re-triggers)
+      3. OA passed + behavioral done        → check composite shortlist flag
+           shortlisted=True  → coordinator (send interview invite)
+           shortlisted=False → notify_rejected
+    """
+    job_id       = state.get("job_id", "")
     candidate_id = state.get("candidate_id", "?")
-    logger.info("[Graph2] route_after_scoring | candidate=%s shortlisted=%s", candidate_id, shortlisted)
+
+    candidate = get_candidate(job_id, candidate_id) or {}
+    oa_passed           = bool(candidate.get("oa_passed"))
+    behavioral_complete = bool(candidate.get("behavioral_complete"))
+    shortlisted         = bool(candidate.get("shortlisted"))
+
+    logger.info(
+        "[Graph2] route_after_scoring | candidate=%s oa_passed=%s behavioral_complete=%s shortlisted=%s",
+        candidate_id, oa_passed, behavioral_complete, shortlisted,
+    )
+
+    if not oa_passed:
+        return "notify_rejected"
+    if not behavioral_complete:
+        return "await_behavioral"
     return "coordinator" if shortlisted else "notify_rejected"
 
 
@@ -229,11 +264,14 @@ def _route_after_invite(state: ScreeningState) -> str:
 
 class _FallbackGraph2:
     async def ainvoke(self, state: ScreeningState) -> ScreeningState:
-        state = await _node_behavioral_oa(state)
-        state = await _node_scoring_engine(state)
+        state    = await _node_behavioral_oa(state)
+        state    = await _node_scoring_engine(state)
         decision = _route_after_scoring(state)
         if decision == "notify_rejected":
             return await _node_notify_rejected(state)
+        if decision == "await_behavioral":
+            return await _node_await_behavioral(state)
+        # Both OA and behavioral complete, shortlisted — proceed to interview invite
         state = await _node_coordinator(state)
         state = await _node_email_invite(state)
         state["graph2_complete"] = True  # type: ignore[assignment]
@@ -251,24 +289,31 @@ def build_graph2() -> Any:
 
     graph = StateGraph(ScreeningState)
 
-    graph.add_node("behavioral_oa",    _node_behavioral_oa)
-    graph.add_node("scoring_engine",   _node_scoring_engine)
-    graph.add_node("coordinator",      _node_coordinator)
-    graph.add_node("email_invite",     _node_email_invite)
-    graph.add_node("notify_rejected",  _node_notify_rejected)
+    graph.add_node("behavioral_oa",     _node_behavioral_oa)
+    graph.add_node("scoring_engine",    _node_scoring_engine)
+    graph.add_node("await_behavioral",  _node_await_behavioral)
+    graph.add_node("coordinator",       _node_coordinator)
+    graph.add_node("email_invite",      _node_email_invite)
+    graph.add_node("notify_rejected",   _node_notify_rejected)
 
     graph.set_entry_point("behavioral_oa")
     graph.add_edge("behavioral_oa", "scoring_engine")
 
-    # Branch: shortlisted → coordinator, else → reject
+    # Three-way branch after scoring:
+    #   OA failed                       → notify_rejected
+    #   OA passed, behavioral pending   → await_behavioral (hold)
+    #   OA + behavioral passed          → coordinator (send invite)
     graph.add_conditional_edges(
         "scoring_engine",
         _route_after_scoring,
         {
-            "coordinator":     "coordinator",
-            "notify_rejected": "notify_rejected",
+            "coordinator":      "coordinator",
+            "await_behavioral": "await_behavioral",
+            "notify_rejected":  "notify_rejected",
         },
     )
+
+    graph.add_edge("await_behavioral", END)
 
     graph.add_edge("coordinator", "email_invite")
 

@@ -5,7 +5,6 @@ import {
   getUserProfile,
   loginWithEmail,
   signupWithEmail,
-  loginWithGoogle as fbLoginWithGoogle,
   logoutUser,
   resetPassword as fbResetPassword,
   UserProfile,
@@ -18,9 +17,9 @@ interface AuthContextType {
   isManager: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, name: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -53,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               role: 'candidate',
               createdAt: new Date().toISOString(),
             });
-            // Retry once after 2 s so we pick up the real Firestore doc
+            // Retry once after 500 ms so we pick up the real Firestore doc
             // (which includes the correct role for manager accounts).
             setTimeout(async () => {
               try {
@@ -62,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               } catch {
                 /* keep fallback */
               }
-            }, 2000);
+            }, 500);
           }
         } catch {
           setUser(null);
@@ -84,16 +83,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signupWithEmail(email, password, name);
   };
 
-  const loginWithGoogle = async () => {
-    await fbLoginWithGoogle();
-  };
-
   const logout = async () => {
     await logoutUser();
   };
 
   const resetPassword = async (email: string) => {
     await fbResetPassword(email);
+  };
+
+  const refreshUser = async () => {
+    if (!firebaseUser) return;
+    try {
+      const profile = await getUserProfile(firebaseUser.uid);
+      if (profile) setUser(profile);
+    } catch {
+      /* keep existing user */
+    }
   };
 
   return (
@@ -105,9 +110,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isManager: user?.role === 'manager',
         login,
         signup,
-        loginWithGoogle,
         logout,
         resetPassword,
+        refreshUser,
       }}
     >
       {children}

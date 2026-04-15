@@ -24,7 +24,11 @@ export const ProtectedRoute: React.FC<Props> = ({ children, requireManager = fal
   }
 
   if (requireManager && user.role !== 'manager') {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/employer" replace />;
+  }
+
+  if (requireManager && user.role === 'manager' && !user.org_id) {
+    return <Navigate to="/employer/new" replace />;
   }
 
   return <>{children}</>;

@@ -28,6 +28,14 @@ async function authRequest<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface OrgSummary {
+  org_id: string;
+  name: string;
+  website?: string;
+  description?: string;
+  created_at?: string;
+}
+
 export interface JobSummary {
   job_id: string;
   title: string;
@@ -35,6 +43,8 @@ export interface JobSummary {
   headcount: number;
   candidate_count: number;
   created_at: string;
+  org_id?: string;
+  org_name?: string;
 }
 
 export interface JobDetail extends JobSummary {
@@ -67,6 +77,7 @@ export interface Candidate {
   oa_passed: boolean;
   behavioral_score: number;
   behavioral_complete: boolean;
+  outreach_sent: boolean;
   interview_status: string;
   current_round: number;
   total_rounds: number;
@@ -148,8 +159,18 @@ export interface MyApplication {
 }
 
 export const api = {
+  orgs: {
+    list: () => request<{ orgs: OrgSummary[] }>('/api/orgs'),
+    get: (orgId: string) => request<OrgSummary>(`/api/orgs/${orgId}`),
+    create: (payload: { name: string; website?: string; description?: string }) =>
+      authRequest<{ org_id: string; name: string }>('/api/orgs', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
   jobs: {
-    list: () => request<JobSummary[]>('/api/jobs'),
+    list: (orgId?: string) =>
+      request<JobSummary[]>(orgId ? `/api/jobs?org_id=${encodeURIComponent(orgId)}` : '/api/jobs'),
     myApplications: () =>
       authRequest<{ applications: MyApplication[] }>('/api/jobs/my-applications'),
     get: (jobId: string) => request<JobDetail>(`/api/jobs/${jobId}`),
@@ -194,7 +215,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    sendOutreachInvite: (jobId: string, candidateId: string) =>
+      authRequest<{ sent: boolean; candidate_id: string }>(
+        `/api/jobs/${jobId}/candidates/${candidateId}/send-invite`,
+        { method: 'POST' },
+      ),
     startScreening: (jobId: string, candidateId: string) =>
       authRequest(`/api/jobs/${jobId}/candidates/${candidateId}/start-screening`, { method: 'POST' }),
+    retryScreening: (jobId: string, candidateId: string) =>
+      authRequest(`/api/jobs/${jobId}/candidates/${candidateId}/retry-screening`, { method: 'POST' }),
   },
 };

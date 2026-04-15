@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.controllers.chat import router as chat_router
 from app.controllers.jobs import router as jobs_router
+from app.controllers.orgs import router as orgs_router
 
 # Ensure Firebase Admin SDK is initialised at startup so that
 # firebase_admin.auth.verify_id_token() works on the first request.
@@ -41,3 +42,4 @@ app.add_middleware(
 
 app.include_router(jobs_router)
 app.include_router(chat_router)
+app.include_router(orgs_router)

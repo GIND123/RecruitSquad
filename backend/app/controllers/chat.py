@@ -116,6 +116,16 @@ async def send_chat_message(oa_token: str, payload: ChatMessageRequest):
     logger.info("[chat] message | job=%s candidate=%s history_len=%d",
                 job_id, candidate_id, len(payload.history))
 
+    # Determine question count before the LLM call so we can set completion accurately
+    behavioral_questions: list = candidate.get("behavioral_questions") or []
+    question_count = len(behavioral_questions)
+
+    # Count how many questions the candidate has already answered (user turns in history)
+    # plus the current message (if non-empty) as the latest answer
+    answers_given = sum(1 for m in payload.history if m.get("role") == "user")
+    if payload.message:
+        answers_given += 1
+
     reply = await conduct_behavioral_chat(
         candidate_id=candidate_id,
         job_id=job_id,
@@ -129,7 +139,8 @@ async def send_chat_message(oa_token: str, payload: ChatMessageRequest):
         new_transcript.append({"role": "user", "content": payload.message})
     new_transcript.append({"role": "assistant", "content": reply})
 
-    complete = _is_complete(reply)
+    # Use answer count as the source of truth; text matching is a fallback
+    complete = (question_count > 0 and answers_given >= question_count) or _is_complete(reply)
     update_candidate(job_id, candidate_id, {
         "behavioral_transcript":       new_transcript,
         "behavioral_chat_in_progress": not complete,
@@ -138,6 +149,11 @@ async def send_chat_message(oa_token: str, payload: ChatMessageRequest):
 
     if complete:
         logger.info("[chat] session complete | job=%s candidate=%s", job_id, candidate_id)
+        # Re-trigger Graph 2 so composite is re-scored with the real behavioral score
+        # and the interview scheduling invite is sent (if OA already passed).
+        import asyncio
+        from app.graphs import run_screening_pipeline
+        asyncio.create_task(run_screening_pipeline(job_id=job_id, candidate_id=candidate_id))
 
     return ChatMessageResponse(
         reply=reply,

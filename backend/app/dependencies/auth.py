@@ -53,6 +53,8 @@ async def require_manager(
     """
     Extends get_current_user — additionally checks that the authenticated
     user has role='manager' in the Firestore 'users' collection.
+    Returns the merged dict of Firebase token claims + Firestore user data
+    (so org_id and org_name are available in endpoints).
     Raises 403 if the user is not a manager.
     """
     from app.services.firestore_service import get_db
@@ -60,8 +62,10 @@ async def require_manager(
     uid = current_user.get("uid", "")
     try:
         doc = get_db().collection("users").document(uid).get()
-        if doc.exists and doc.to_dict().get("role") == "manager":
-            return current_user
+        if doc.exists:
+            user_data = doc.to_dict() or {}
+            if user_data.get("role") == "manager":
+                return {**current_user, **user_data}
     except Exception as exc:
         logger.warning("[auth] Firestore role check failed uid=%s: %s", uid, exc)
 

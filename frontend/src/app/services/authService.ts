@@ -17,6 +17,8 @@ export interface UserProfile {
   name: string;
   role: UserRole;
   createdAt: string;
+  org_id?: string;
+  org_name?: string;
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
@@ -44,6 +46,16 @@ export async function signupWithEmail(email: string, password: string, name: str
     role: 'candidate',
     createdAt: new Date().toISOString(),
   });
+  return cred;
+}
+
+/**
+ * Creates a Firebase auth account without writing a Firestore profile.
+ * Used during org signup so the backend can write the full profile with role=manager.
+ */
+export async function createFirebaseAccountOnly(email: string, password: string, name: string) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  await updateProfile(cred.user, { displayName: name });
   return cred;
 }
 

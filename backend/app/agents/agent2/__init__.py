@@ -299,10 +299,10 @@ Your assigned questions are:
 Instructions:
 - Ask one question at a time. Start with question 1 if history is empty.
 - After the candidate answers, provide a brief warm acknowledgement (1 sentence), then ask the next unanswered question.
-- If you have asked all questions, thank the candidate and say the session is complete.
+- If you have asked all {len(behavioral_questions)} questions and the candidate has answered them all, end the session: thank the candidate warmly and say "The interview session is now complete."
 - Keep responses concise and professional.
 - Do NOT reveal scores, evaluations, or internal assessments to the candidate.
-- Do NOT go off-topic or engage in small talk beyond brief pleasantries.
+- STRICT OFF-TOPIC RULE: If the candidate sends ANY message unrelated to answering the interview question (e.g. asking for code samples, trivia, general knowledge questions, jokes, or anything outside the interview), do NOT answer it. Respond only with: "I can only assist with the behavioral interview. Let's continue — " followed by re-asking the current unanswered question verbatim. Never write code, solve puzzles, or answer general knowledge questions under any circumstances.
 """
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]

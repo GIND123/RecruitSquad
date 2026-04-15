@@ -21,9 +21,10 @@ from app.services.firestore_service import (
 
 logger = logging.getLogger(__name__)
 
-OA_PASS_THRESHOLD        = 70.0   # minimum OA score to proceed past OA stage
-SHORTLIST_SCORE_THRESHOLD = 75.0  # minimum composite score to receive an interview invite
-INVITE_MULTIPLIER         = 5     # invite up to headcount × this many candidates
+OA_PASS_THRESHOLD          = 70.0  # minimum OA score to proceed past OA stage
+BEHAVIORAL_PASS_THRESHOLD  = 70.0  # minimum behavioral score to receive an interview invite
+SHORTLIST_SCORE_THRESHOLD  = 75.0  # minimum composite score (post-interview final decisions only)
+INVITE_MULTIPLIER          = 5     # invite up to headcount × this many candidates
 
 
 # ── New per-dimension scoring helpers ─────────────────────────────────────────
@@ -749,24 +750,28 @@ async def run_scoring_engine(state: ScreeningState) -> ScreeningState:
     updated_state = await compute_candidate_score(state)
     await recompute_rankings(job_id)
 
-    job      = get_job(job_id) or {}
-    headcount = int(job.get("headcount", 1) or 1)
-    invite_cap = headcount * INVITE_MULTIPLIER
+    # Pre-interview shortlisting gate:
+    # The composite_v3 formula reserves 60% of weight for interview rounds, so a
+    # candidate who hasn't done any interviews can reach at most ~40 points — well
+    # below the 75-point SHORTLIST_SCORE_THRESHOLD.  Using the composite score here
+    # would reject every candidate before they ever see an interviewer.
+    #
+    # Instead, shortlist for interview if BOTH of the following are true:
+    #   • OA score ≥ OA_PASS_THRESHOLD  (already stored as oa_passed flag)
+    #   • Behavioral score ≥ BEHAVIORAL_PASS_THRESHOLD
+    #
+    # SHORTLIST_SCORE_THRESHOLD (75) is reserved for post-interview final decisions
+    # in Graph 3 / run_scoring_ranking.
+    candidate_doc = get_candidate(job_id, candidate_id) or {}
+    oa_passed         = bool(candidate_doc.get("oa_passed"))
+    behavioral_score  = float(candidate_doc.get("behavioral_score") or 0.0)
+    behavioral_passed = behavioral_score >= BEHAVIORAL_PASS_THRESHOLD
 
-    candidates = get_candidates(job_id)
-    # Sort by composite_score descending, filter by threshold, cap at invite_cap
-    scored = sorted(
-        [c for c in candidates if (c.get("composite_score") or 0.0) >= SHORTLIST_SCORE_THRESHOLD],
-        key=lambda c: c.get("composite_score") or 0.0,
-        reverse=True,
+    shortlisted = oa_passed and behavioral_passed
+    logger.info(
+        "[A5] shortlisting | candidate=%s oa_passed=%s behavioral_score=%.1f behavioral_passed=%s → shortlisted=%s",
+        candidate_id, oa_passed, behavioral_score, behavioral_passed, shortlisted,
     )
-    shortlist_ids = {
-        c.get("candidate_id")
-        for c in scored[:invite_cap]
-        if c.get("candidate_id")
-    }
-
-    shortlisted = candidate_id in shortlist_ids
     update_candidate(job_id, candidate_id, {"shortlisted": shortlisted})
 
     updated_state["shortlisted"] = shortlisted
@@ -807,25 +812,32 @@ def run_scoring_ranking(state: dict[str, Any]) -> dict[str, Any]:
 
     eligible.sort(key=lambda candidate: candidate["composite_score"], reverse=True)
 
+    # Stages that mean the candidate is already in (or past) the interview process.
+    # run_scoring_ranking is called by Graph 3 (final market analysis) but should
+    # never clobber a stage that Graph 4 just set (e.g. INTERVIEW_SCHEDULED for the
+    # next round, or INTERVIEW_DONE after all rounds finish).
+    _INTERVIEW_STAGES = {"INTERVIEW_SCHEDULED", "INTERVIEW_DONE", "OFFER_PENDING", "HIRED"}
+
     invite_cap = headcount * INVITE_MULTIPLIER
     shortlisted_ids: list[str] = []
     for rank, candidate in enumerate(eligible, start=1):
         candidate_id = candidate["candidate_id"]
+        current_stage = str(candidate.get("pipeline_stage") or "")
         # Shortlist if within invite_cap AND composite score meets threshold
         shortlisted = (
             rank <= invite_cap
             and candidate["composite_score"] >= SHORTLIST_SCORE_THRESHOLD
         )
-        update_candidate(
-            job_id,
-            candidate_id,
-            {
-                "rank": rank,
-                "composite_score": candidate["composite_score"],
-                "shortlisted": shortlisted,
-                "pipeline_stage": "SHORTLISTED" if shortlisted else "SCORED",
-            },
-        )
+        updates: dict = {
+            "rank": rank,
+            "composite_score": candidate["composite_score"],
+            "shortlisted": shortlisted,
+        }
+        # Only write pipeline_stage when the candidate is not already in the
+        # interview flow — avoid overwriting INTERVIEW_SCHEDULED with SHORTLISTED.
+        if current_stage not in _INTERVIEW_STAGES:
+            updates["pipeline_stage"] = "SHORTLISTED" if shortlisted else "SCORED"
+        update_candidate(job_id, candidate_id, updates)
         if shortlisted:
             shortlisted_ids.append(candidate_id)
 

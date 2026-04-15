@@ -5,17 +5,17 @@ import { JobDetails } from './pages/JobDetails';
 import { Apply } from './pages/Apply';
 import { Profile } from './pages/Profile';
 import { Login } from './pages/Login';
-import { OrgRegister } from './pages/OrgRegister';
-import { OrgPortal } from './pages/OrgPortal';
 import { ManagerDashboard } from './pages/ManagerDashboard';
 import { CreateJob } from './pages/CreateJob';
-import { JobAdvertisements } from './pages/JobAdvertisements';
+import { JobCandidates } from './pages/JobCandidates';
 import { BehavioralChat } from './pages/BehavioralChat';
 import { OnlineAssessment } from './pages/OnlineAssessment';
 import { InterviewSchedule } from './pages/InterviewSchedule';
+import { JobAdvertisements } from './pages/JobAdvertisements';
+import { EmployerLanding } from './pages/EmployerLanding';
+import { OrgSignup } from './pages/OrgSignup';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { JobCandidates } from './pages/JobCandidates';
 
 export const router = createBrowserRouter([
   {
@@ -27,12 +27,12 @@ export const router = createBrowserRouter([
       { path: 'jobs/:id', element: <JobDetails /> },
       { path: 'jobs/:id/apply', element: <Apply /> },
       { path: 'oa/:token', element: <OnlineAssessment /> },
-      { path: 'oa/:token/chat', element: <BehavioralChat /> },
       { path: 'schedule/:candidateId', element: <InterviewSchedule /> },
+      { path: 'oa/:token/chat', element: <BehavioralChat /> },
       { path: 'job-advertisements', element: <JobAdvertisements /> },
       { path: 'login', element: <Login /> },
-      { path: 'org-register', element: <OrgRegister /> },
-      { path: 'org-portal', element: <OrgPortal /> },
+      { path: 'employer', element: <EmployerLanding /> },
+      { path: 'employer/new', element: <OrgSignup /> },
       {
         path: 'profile',
         element: (
