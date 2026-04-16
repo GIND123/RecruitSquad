@@ -1,5 +1,8 @@
 # RecruitSquad
 
+
+<img width="1407" height="711" alt="Recruit Squad Wire Diagram" src="https://github.com/user-attachments/assets/a306714f-c5a0-4cd7-a413-ce58d2be2ddd" />
+
 AI-assisted recruiting platform with:
 - `frontend/`: candidate + manager web app (React + Vite + Firebase Auth)
 - `backend/`: main orchestration API (FastAPI + LangGraph + Firestore)
